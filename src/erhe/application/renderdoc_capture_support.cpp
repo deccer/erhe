@@ -52,27 +52,35 @@ void Renderdoc_capture_support::initialize_component()
 {
     ERHE_VERIFY((g_renderdoc_capture_support == nullptr) || (g_renderdoc_capture_support == this));
     g_renderdoc_capture_support = this; // due to early exit
-    if (m_is_initialized)
-    {
+
+    auto ini = erhe::application::get_ini("erhe.ini", "renderdoc");
+    ini->get("capture_support", config.capture_support);
+
+    if (m_is_initialized) {
         return;
     }
-    if (!g_configuration->renderdoc.capture_support)
-    {
+    if (!config.capture_support) {
+        return;
+    }
+
+    bool openxr{false};
+    auto headset_ini = erhe::application::get_ini("erhe.ini", "headset");
+    headset_ini->get("openxr", openxr);
+    if (openxr) {
+        log_renderdoc->warn("Disabling RenderDoc capture support due to OpenXR being enabled.");
         return;
     }
 
 #if defined(_WIN32) || defined(WIN32)
     HMODULE renderdoc_module = LoadLibraryExA("C:\\Program Files\\RenderDoc\\renderdoc.dll", NULL, 0);
-    if (renderdoc_module)
-    {
+    if (renderdoc_module) {
         auto RENDERDOC_GetAPI = reinterpret_cast<pRENDERDOC_GetAPI>(
             GetProcAddress(
                 renderdoc_module,
                 "RENDERDOC_GetAPI"
             )
         );
-        if (RENDERDOC_GetAPI == nullptr)
-        {
+        if (RENDERDOC_GetAPI == nullptr) {
             log_renderdoc->warn("RenderDoc: RENDERDOC_GetAPI() not found in renderdoc.dll");
             return;
         }
@@ -81,12 +89,9 @@ void Renderdoc_capture_support::initialize_component()
         log_renderdoc->trace("Loaded RenderDoc DLL, RENDERDOC_GetAPI() return value = {}", ret);
         ERHE_VERIFY(ret == 1);
 
-        if (renderdoc_api->MaskOverlayBits == nullptr)
-        {
+        if (renderdoc_api->MaskOverlayBits == nullptr) {
             log_renderdoc->warn("RenderDoc: RENDERDOC_MaskOverlayBits() not found in renderdoc.dll");
-        }
-        else
-        {
+        } else {
             renderdoc_api->MaskOverlayBits(eRENDERDOC_Overlay_None, eRENDERDOC_Overlay_None);
         }
 
@@ -94,8 +99,7 @@ void Renderdoc_capture_support::initialize_component()
 #elif __unix__
     // For android replace librenderdoc.so with libVkLayer_GLES_RenderDoc.so
     void* renderdoc_so = dlopen("librenderdoc.so", RTLD_NOW);
-    if (renderdoc_so != nullptr)
-    {
+    if (renderdoc_so != nullptr) {
         pRENDERDOC_GetAPI RENDERDOC_GetAPI = (pRENDERDOC_GetAPI)dlsym(renderdoc_so, "RENDERDOC_GetAPI");
         int ret = RENDERDOC_GetAPI(eRENDERDOC_API_Version_1_5_0, (void **)&renderdoc_api);
         log_renderdoc->trace("Loaded RenderDoc DLL, RENDERDOC_GetAPI() return value = {}", ret);
@@ -107,8 +111,7 @@ void Renderdoc_capture_support::initialize_component()
 
 void Renderdoc_capture_support::start_frame_capture(const erhe::toolkit::Context_window* context_window)
 {
-    if (!renderdoc_api || (context_window == nullptr) || !m_is_initialized)
-    {
+    if (!renderdoc_api || (context_window == nullptr) || !m_is_initialized) {
         return;
     }
     log_renderdoc->info("RenderDoc: StartFrameCapture()");
@@ -123,8 +126,7 @@ void Renderdoc_capture_support::start_frame_capture(const erhe::toolkit::Context
 
 void Renderdoc_capture_support::end_frame_capture(const erhe::toolkit::Context_window* context_window)
 {
-    if (!renderdoc_api || (context_window == nullptr) || !m_is_initialized)
-    {
+    if (!renderdoc_api || (context_window == nullptr) || !m_is_initialized) {
         return;
     }
     log_renderdoc->info("RenderDoc: EndFrameCapture()");

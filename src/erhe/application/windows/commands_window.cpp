@@ -41,7 +41,7 @@ void Commands_window::initialize_component()
 {
     ERHE_VERIFY(g_imgui_windows != nullptr);
 
-    g_imgui_windows->register_imgui_window(this);
+    g_imgui_windows->register_imgui_window(this, "commands");
 }
 
 void Commands_window::imgui()
@@ -49,12 +49,10 @@ void Commands_window::imgui()
 #if defined(ERHE_GUI_LIBRARY_IMGUI)
 
     const auto* viewport = get_viewport();
-    if (viewport->want_capture_keyboard())
-    {
+    if (viewport->want_capture_keyboard()) {
         ImGui::TextUnformatted("ImGui Want Capture Keyboard");
     }
-    if (viewport->want_capture_mouse())
-    {
+    if (viewport->want_capture_mouse()) {
         ImGui::TextUnformatted("ImGui Want Capture Mouse");
     }
 

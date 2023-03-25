@@ -6,7 +6,7 @@
 namespace editor
 {
 
-Tool::~Tool()
+Tool::~Tool() noexcept
 {
     m_hover_scene_view = nullptr;
 }
@@ -14,8 +14,7 @@ Tool::~Tool()
 void Tool::on_message(Editor_message& message)
 {
     using namespace erhe::toolkit;
-    if (test_all_rhs_bits_set(message.update_flags, Message_flag_bit::c_flag_bit_hover_scene_view))
-    {
+    if (test_all_rhs_bits_set(message.update_flags, Message_flag_bit::c_flag_bit_hover_scene_view)) {
         m_hover_scene_view = message.scene_view;
     }
 }

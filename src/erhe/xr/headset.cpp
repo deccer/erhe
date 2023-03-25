@@ -11,13 +11,10 @@ Headset::Headset(
     const Xr_configuration&        configuration
 )
 {
-    ERHE_PROFILE_FUNCTION
-
     ERHE_VERIFY(context_window != nullptr);
 
     m_xr_instance = std::make_unique<Xr_instance>(configuration);
-    if (!m_xr_instance->is_available())
-    {
+    if (!m_xr_instance->is_available()) {
         m_xr_instance.reset();
         return;
     }
@@ -25,9 +22,7 @@ Headset::Headset(
     m_xr_session = std::make_unique<Xr_session>(*m_xr_instance.get(), *context_window);
 }
 
-Headset::~Headset()
-{
-}
+Headset::~Headset() noexcept = default;
 
 [[nodiscard]] auto Headset::get_actions_left() -> Xr_actions&
 {
@@ -72,20 +67,17 @@ auto Headset::get_hand_tracking_active(const XrHandEXT hand) const -> bool
 
 [[nodiscard]] auto Headset::get_view_in_world() const -> glm::mat4
 {
-    if (!m_xr_session)
-    {
+    if (!m_xr_session) {
         return glm::mat4{1.0f};
     }
     const auto& space_location = m_xr_session->get_view_space_location();
 
     glm::vec3 position{0.0f, 0.0f, 0.0f};
-    if ((space_location.locationFlags & XR_SPACE_LOCATION_POSITION_VALID_BIT) == XR_SPACE_LOCATION_POSITION_VALID_BIT)
-    {
+    if ((space_location.locationFlags & XR_SPACE_LOCATION_POSITION_VALID_BIT) == XR_SPACE_LOCATION_POSITION_VALID_BIT) {
         position = to_glm(space_location.pose.position);
     }
     glm::quat orientation{};
-    if ((space_location.locationFlags & XR_SPACE_LOCATION_ORIENTATION_VALID_BIT) == XR_SPACE_LOCATION_ORIENTATION_VALID_BIT)
-    {
+    if ((space_location.locationFlags & XR_SPACE_LOCATION_ORIENTATION_VALID_BIT) == XR_SPACE_LOCATION_ORIENTATION_VALID_BIT) {
         orientation = to_glm(space_location.pose.orientation);
     }
 
@@ -121,21 +113,17 @@ auto Headset::begin_frame() -> Frame_timing
         .should_render            = true
     };
 
-    if (!m_xr_instance || !m_xr_session)
-    {
+    if (!m_xr_instance || !m_xr_session) {
         return result;
     }
-    if (!m_xr_instance->poll_xr_events(*m_xr_session.get()))
-    {
+    if (!m_xr_instance->poll_xr_events(*m_xr_session.get())) {
         return result;
     }
-    if (!m_xr_session->is_session_running())
-    {
+    if (!m_xr_session->is_session_running()) {
         return result;
     }
 
-    if (!m_xr_instance->update_actions(*m_xr_session.get()))
-    {
+    if (!m_xr_instance->update_actions(*m_xr_session.get())) {
         return result;
     }
 
@@ -144,13 +132,11 @@ auto Headset::begin_frame() -> Frame_timing
     m_xr_session->update_view_pose();
 
     auto* xr_frame_state = m_xr_session->wait_frame();
-    if (xr_frame_state == nullptr)
-    {
+    if (xr_frame_state == nullptr) {
         return result;
     }
 
-    if (!m_xr_session->begin_frame())
-    {
+    if (!m_xr_session->begin_frame()) {
         return result;
     }
 
@@ -166,12 +152,10 @@ auto Headset::render(std::function<bool(Render_view&)> render_view_callback) -> 
 {
     ERHE_PROFILE_FUNCTION
 
-    if (!m_xr_session)
-    {
+    if (!m_xr_session) {
         return false;
     }
-    if (!m_xr_session->render_frame(render_view_callback))
-    {
+    if (!m_xr_session->render_frame(render_view_callback)) {
         return false;
     }
     return true;
@@ -181,8 +165,7 @@ auto Headset::end_frame(const bool rendered) -> bool
 {
     ERHE_PROFILE_FUNCTION
 
-    if (!m_xr_instance)
-    {
+    if (!m_xr_instance) {
         return false;
     }
 

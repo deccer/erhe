@@ -96,15 +96,16 @@ void Shadow_renderer::initialize_component()
     ERHE_PROFILE_FUNCTION
     ERHE_VERIFY(g_shadow_renderer == nullptr);
 
-    const auto& config = erhe::application::g_configuration->shadow_renderer;
+    auto ini = erhe::application::get_ini("erhe.ini", "shadow_renderer");
+    ini->get("enabled",                    config.enabled);
+    ini->get("tight_frustum_fit",          config.tight_frustum_fit);
+    ini->get("shadow_map_resolution",      config.shadow_map_resolution);
+    ini->get("shadow_map_max_light_count", config.shadow_map_max_light_count);
 
-    if (!config.enabled)
-    {
+    if (!config.enabled) {
         log_render->info("Shadow renderer disabled due to erhe.ini setting");
         return;
-    }
-    else
-    {
+    } else {
         log_render->info(
             "Shadow renderer using shadow map resolution {0}x{0}, max {1} lights",
             config.shadow_map_resolution,
@@ -118,13 +119,10 @@ void Shadow_renderer::initialize_component()
 
     auto& shader_resources  = *g_program_interface->shader_resources.get();
     m_light_buffers         = std::make_unique<Light_buffer        >(&shader_resources.light_interface);
-    m_draw_indirect_buffers = std::make_unique<Draw_indirect_buffer>(erhe::application::g_configuration->renderer.max_draw_count);
+    m_draw_indirect_buffers = std::make_unique<Draw_indirect_buffer>(g_program_interface->config.max_draw_count);
     m_primitive_buffers     = std::make_unique<Primitive_buffer    >(&shader_resources.primitive_interface);
 
-    ERHE_VERIFY(
-        erhe::application::g_configuration->shadow_renderer.shadow_map_max_light_count <=
-        erhe::application::g_configuration->renderer.max_light_count
-    );
+    ERHE_VERIFY(config.shadow_map_max_light_count <= g_program_interface->config.max_light_count);
 
     m_vertex_input = std::make_unique<Vertex_input_state>(
         erhe::graphics::Vertex_input_state_data::make(
@@ -172,10 +170,9 @@ auto Shadow_renderer::create_node_for_scene_view(
     Scene_view& scene_view
 ) -> std::shared_ptr<Shadow_render_node>
 {
-    const auto& config        = erhe::application::g_configuration->shadow_renderer;
-    const int   resolution    = config.enabled ? config.shadow_map_resolution      : 1;
-    const int   light_count   = config.enabled ? config.shadow_map_max_light_count : 1;
-    const bool  reverse_depth = erhe::application::g_configuration->graphics.reverse_depth;
+    const int  resolution    = config.enabled ? config.shadow_map_resolution      : 1;
+    const int  light_count   = config.enabled ? config.shadow_map_max_light_count : 1;
+    const bool reverse_depth = erhe::application::g_configuration->graphics.reverse_depth;
 
     auto shadow_render_node = std::make_shared<Shadow_render_node>(
         *this,
@@ -191,13 +188,11 @@ auto Shadow_renderer::create_node_for_scene_view(
 
 void Shadow_renderer::handle_graphics_settings_changed()
 {
-    const auto& config        = erhe::application::g_configuration->shadow_renderer;
-    const int   resolution    = config.enabled ? config.shadow_map_resolution      : 1;
-    const int   light_count   = config.enabled ? config.shadow_map_max_light_count : 1;
-    const bool  reverse_depth = erhe::application::g_configuration->graphics.reverse_depth;
+    const int  resolution    = config.enabled ? config.shadow_map_resolution      : 1;
+    const int  light_count   = config.enabled ? config.shadow_map_max_light_count : 1;
+    const bool reverse_depth = erhe::application::g_configuration->graphics.reverse_depth;
 
-    for (const auto& node : m_nodes)
-    {
+    for (const auto& node : m_nodes) {
         node->reconfigure(resolution, light_count, reverse_depth);
     }
 }
@@ -206,20 +201,17 @@ auto Shadow_renderer::get_node_for_view(
     const Scene_view* scene_view
 ) -> std::shared_ptr<Shadow_render_node>
 {
-    if (scene_view == nullptr)
-    {
+    if (scene_view == nullptr) {
         return {};
     }
     auto i = std::find_if(
         m_nodes.begin(),
         m_nodes.end(),
-        [scene_view](const auto& entry)
-        {
+        [scene_view](const auto& entry) {
             return &entry->get_scene_view() == scene_view;
         }
     );
-    if (i == m_nodes.end())
-    {
+    if (i == m_nodes.end()) {
         return {};
     }
     return *i;
@@ -232,9 +224,7 @@ auto Shadow_renderer::get_nodes() const -> const std::vector<std::shared_ptr<Sha
 
 void Shadow_renderer::next_frame()
 {
-    const auto& config = erhe::application::g_configuration->shadow_renderer;
-    if (!config.enabled)
-    {
+    if (!config.enabled) {
         return;
     }
 
@@ -257,11 +247,7 @@ auto Shadow_renderer::render(const Render_parameters& parameters) -> bool
         )
     };
 
-    if (
-        !erhe::application::g_configuration->shadow_renderer.enabled ||
-        !parameters.scene_root
-    )
-    {
+    if (!config.enabled || !parameters.scene_root) {
         return false;
     }
 
@@ -292,43 +278,37 @@ auto Shadow_renderer::render(const Render_parameters& parameters) -> bool
         .require_at_least_one_bit_clear = 0u
     };
 
-    m_light_buffers->update(
+    const auto light_range = m_light_buffers->update(
         lights,
         &parameters.light_projections,
         glm::vec3{0.0f}
     );
-    m_light_buffers->bind_light_buffer();
+    m_light_buffers->bind_light_buffer(light_range);
 
-    for (const auto& meshes : mesh_spans)
-    {
-        m_primitive_buffers->update(meshes, shadow_filter);
+    for (const auto& meshes : mesh_spans) {
+        const auto primitive_range = m_primitive_buffers->update(meshes, shadow_filter);
         const auto draw_indirect_buffer_range = m_draw_indirect_buffers->update(
             meshes,
             erhe::primitive::Primitive_mode::polygon_fill,
             shadow_filter
         );
-        if (draw_indirect_buffer_range.draw_indirect_count > 0)
-        {
-            m_primitive_buffers->bind();
-            m_draw_indirect_buffers->bind();
+        if (draw_indirect_buffer_range.draw_indirect_count > 0) {
+            m_primitive_buffers->bind(primitive_range);
+            m_draw_indirect_buffers->bind(draw_indirect_buffer_range.range);
         }
 
-        for (const auto& light : lights)
-        {
-            if (!light->cast_shadow)
-            {
+        for (const auto& light : lights) {
+            if (!light->cast_shadow) {
                 continue;
             }
 
             auto* light_projection_transform = parameters.light_projections.get_light_projection_transforms_for_light(light.get());
-            if (light_projection_transform == nullptr)
-            {
+            if (light_projection_transform == nullptr) {
                 //// log_render->warn("Light {} has no light projection transforms", light->name());
                 continue;
             }
             const std::size_t light_index = light_projection_transform->index;
-            if (light_index >= parameters.framebuffers.size())
-            {
+            if (light_index >= parameters.framebuffers.size()) {
                 continue;
             }
 
@@ -342,10 +322,7 @@ auto Shadow_renderer::render(const Render_parameters& parameters) -> bool
 
             {
                 ERHE_PROFILE_SCOPE("bind fbo");
-                gl::bind_framebuffer(
-                    gl::Framebuffer_target::draw_framebuffer,
-                    parameters.framebuffers[light_index]->gl_name()
-                );
+                gl::bind_framebuffer(gl::Framebuffer_target::draw_framebuffer, parameters.framebuffers[light_index]->gl_name());
             }
 
             {
@@ -357,13 +334,12 @@ auto Shadow_renderer::render(const Render_parameters& parameters) -> bool
                 gl::clear_buffer_fv(gl::Buffer::depth, 0, erhe::application::g_configuration->depth_clear_value_pointer());
             }
 
-            if (draw_indirect_buffer_range.draw_indirect_count == 0)
-            {
+            if (draw_indirect_buffer_range.draw_indirect_count == 0) {
                 continue;
             }
 
-            m_light_buffers->update_control(light_index);
-            m_light_buffers->bind_control_buffer();
+            const auto control_range = m_light_buffers->update_control(light_index);
+            m_light_buffers->bind_control_buffer(control_range);
 
             {
                 static constexpr std::string_view c_id_mdi{"mdi"};

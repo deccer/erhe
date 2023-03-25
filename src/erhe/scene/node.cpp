@@ -9,6 +9,8 @@
 
 #include <fmt/format.h>
 
+#include <sstream>
+
 namespace erhe::scene
 {
 
@@ -37,9 +39,10 @@ Node_attachment::Node_attachment(const std::string_view name)
 
 Node_attachment::~Node_attachment() noexcept
 {
+    log->trace("~Node_attachment `{}`", get_name());
+
     Node* const host_node = get_node();
-    if (host_node != nullptr)
-    {
+    if (host_node != nullptr) {
         host_node->detach(this);
     }
 }
@@ -56,8 +59,7 @@ auto Node_attachment::get_node() const -> const Node*
 
 auto Node_attachment::get_item_host() const -> Scene_host*
 {
-    if (m_node == nullptr)
-    {
+    if (m_node == nullptr) {
         return nullptr;
     }
     return m_node->get_item_host();
@@ -71,8 +73,7 @@ void Node_attachment::handle_node_update(
     const uint64_t old_flag_bits = old_node ? old_node->get_flag_bits() : 0;
     const uint64_t new_flag_bits = new_node ? new_node->get_flag_bits() : 0;
     const bool     visible       = (new_flag_bits & Item_flags::visible) == Item_flags::visible;
-    if (old_flag_bits != new_flag_bits)
-    {
+    if (old_flag_bits != new_flag_bits) {
         handle_node_flag_bits_update(old_flag_bits, new_flag_bits);
     }
     set_visible(visible);
@@ -88,20 +89,35 @@ void Node_attachment::handle_node_flag_bits_update(
     set_visible(visible);
 };
 
-void Node_attachment::set_node(Node* const node)
+void Node_attachment::set_node(
+    Node* const       node,
+    const std::size_t position
+)
 {
+    if (m_node == node) {
+        return;
+    }
     Node* const old_node = m_node;
     Scene_host* const old_host = (m_node != nullptr) ? m_node->get_item_host() : nullptr;
     m_node = node;
     Scene_host* const new_host = (m_node != nullptr) ? m_node->get_item_host() : nullptr;
-    if (m_node != old_node)
-    {
+
+    auto this_shared = (node != nullptr)
+        ? std::static_pointer_cast<Node_attachment>(shared_from_this())
+        : std::shared_ptr<Node_attachment>{};
+    if (old_node != nullptr) {
+        old_node->handle_remove_attachment(this);
+    }
+    if (node != nullptr) {
+        node->handle_add_attachment(
+            this_shared,
+            position
+        );
+
         handle_node_update(old_node, node);
-        if (new_host != old_host)
-        {
+        if (new_host != old_host) {
             handle_node_scene_host_update(old_host, new_host);
-            if (m_node != nullptr)
-            {
+            if (m_node != nullptr) {
                 handle_node_transform_update();
             }
         }
@@ -123,15 +139,34 @@ Node::~Node() noexcept
 {
     sanity_check();
 
+    log->trace(
+        "~Node '{}' depth = {} child count = {}",
+        get_name(),
+        get_depth(),
+        node_data.children.size()
+    );
+    remove();
+}
+
+void Node::remove()
+{
+    log->trace(
+        "Node::remove '{}' depth = {} child count = {}",
+        get_name(),
+        get_depth(),
+        node_data.children.size()
+    );
+
+    sanity_check();
+
     std::shared_ptr<Node> parent = node_data.parent.lock();
     set_parent({});
-    for (auto& child : node_data.children)
-    {
-        child->set_parent(parent);
+    while (!node_data.children.empty()) {
+        node_data.children.back()->set_parent(parent);
     }
-    for (auto& attachment : node_data.attachments)
-    {
-        attachment->set_node(nullptr);
+
+    while (!node_data.attachments.empty()) {
+        node_data.attachments.back()->set_node(nullptr);
     }
     sanity_check();
 }
@@ -159,16 +194,6 @@ void Node::attach(const std::shared_ptr<Node_attachment>& attachment)
         attachment->get_name()
     );
 
-#ifndef NDEBUG
-    const auto i = std::find(node_data.attachments.begin(), node_data.attachments.end(), attachment);
-    if (i != node_data.attachments.end())
-    {
-        log->error("Attachment {} already attached to {}", attachment->type_name(), get_name());
-        return;
-    }
-#endif
-
-    node_data.attachments.push_back(attachment);
     attachment->set_node(this);
     sanity_check();
 }
@@ -177,8 +202,7 @@ auto Node::detach(Node_attachment* attachment) -> bool
 {
     ERHE_PROFILE_FUNCTION
 
-    if (!attachment)
-    {
+    if (!attachment) {
         log->warn("empty attachment, cannot detach");
         return false;
     }
@@ -191,49 +215,19 @@ auto Node::detach(Node_attachment* attachment) -> bool
     );
 
     auto* node = attachment->get_node();
-    if (node != this)
-    {
+    if (node != this) {
         log->warn(
             "Attachment {} {} node {} != this {}",
             attachment->type_name(),
             attachment->get_name(),
-            node
-                ? node->get_name()
-                : "(none)",
+            node ? node->get_name() : "(none)",
             get_name()
         );
         return false;
     }
 
-    const auto i = std::remove_if(
-        node_data.attachments.begin(),
-        node_data.attachments.end(),
-        [attachment](const std::shared_ptr<Node_attachment>& node_attachment)
-        {
-            return node_attachment.get() == attachment;
-        }
-    );
-    if (i != node_data.attachments.end())
-    {
-        log->trace(
-            "Removing {} {} attachment from node",
-            attachment->type_name(),
-            get_name()
-        );
-        node_data.attachments.erase(i, node_data.attachments.end());
-        attachment->set_node(nullptr);
-        sanity_check();
-        return true;
-    }
-
-    log->warn(
-        "Detaching {} {} from node {} failed - was not attached",
-        attachment->type_name(),
-        attachment->get_name(),
-        get_name()
-    );
-
-    return false;
+    attachment->set_node(nullptr);
+    return true;
 }
 
 auto Node::child_count() const -> std::size_t
@@ -244,10 +238,8 @@ auto Node::child_count() const -> std::size_t
 auto Node::child_count(const Item_filter& filter) const -> std::size_t
 {
     std::size_t result{};
-    for (const auto& child : node_data.children)
-    {
-        if (filter(child->get_flag_bits()))
-        {
+    for (const auto& child : node_data.children) {
+        if (filter(child->get_flag_bits())) {
             ++result;
         }
     }
@@ -257,10 +249,8 @@ auto Node::child_count(const Item_filter& filter) const -> std::size_t
 auto Node::attachment_count(const Item_filter& filter) const -> std::size_t
 {
     std::size_t result{};
-    for (const auto& attachment : node_data.attachments)
-    {
-        if (filter(attachment->get_flag_bits()))
-        {
+    for (const auto& attachment : node_data.attachments) {
+        if (filter(attachment->get_flag_bits())) {
             ++result;
         }
     }
@@ -270,8 +260,7 @@ auto Node::attachment_count(const Item_filter& filter) const -> std::size_t
 auto Node::get_index_in_parent() const -> std::size_t
 {
     const auto& current_parent = parent().lock();
-    if (current_parent)
-    {
+    if (current_parent) {
         const auto index = current_parent->get_index_of_child(this);
         return index.has_value() ? index.value() : 0;
     }
@@ -284,10 +273,8 @@ auto Node::get_index_of_child(const Node* child) const -> std::optional<std::siz
         std::size_t i = 0, end = node_data.children.size();
         i < end;
         ++i
-    )
-    {
-        if (node_data.children[i].get() == child)
-        {
+    ) {
+        if (node_data.children[i].get() == child) {
             return i;
         }
     }
@@ -297,12 +284,10 @@ auto Node::get_index_of_child(const Node* child) const -> std::optional<std::siz
 auto Node::is_ancestor(const Node* ancestor_candidate) const -> bool
 {
     const auto& current_parent = parent().lock();
-    if (!current_parent)
-    {
+    if (!current_parent) {
         return false;
     }
-    if (current_parent.get() == ancestor_candidate)
-    {
+    if (current_parent.get() == ancestor_candidate) {
         return true;
     }
     return current_parent->is_ancestor(ancestor_candidate);
@@ -329,14 +314,51 @@ void Node::handle_add_child(
 
 #ifndef NDEBUG
     const auto i = std::find(node_data.children.begin(), node_data.children.end(), child_node);
-    if (i != node_data.children.end())
-    {
+    if (i != node_data.children.end()) {
         log->error("Node {} already has child {}", get_name(), child_node->get_name());
         return;
     }
 #endif
 
+    log->trace("'{}'::handle_add_child '{}'", get_name(), child_node->get_name());
     node_data.children.insert(node_data.children.begin() + position, child_node);
+}
+
+void Node::trace()
+{
+    std::stringstream ss;
+    for (int i = 0; i < node_data.depth; ++i) {
+        ss << "  ";
+    }
+    log->trace(
+        "{}{} '{}' id = {}",
+        ss.str(),
+        type_name(),
+        get_name(),
+        get_id()
+    );
+    for (const auto& child : node_data.children) {
+        child->trace();
+    }
+}
+
+void Node::handle_add_attachment(
+    const std::shared_ptr<Node_attachment>& attachment,
+    std::size_t                             position
+)
+{
+    ERHE_VERIFY(attachment);
+
+#ifndef NDEBUG
+    const auto i = std::find(node_data.attachments.begin(), node_data.attachments.end(), attachment);
+    if (i != node_data.attachments.end()) {
+        log->error("Node {} already has attachment {}", get_name(), attachment->get_name());
+        return;
+    }
+#endif
+
+    log->trace("'{}'::handle_add_attachment '{}'", get_name(), attachment->get_name());
+    node_data.attachments.insert(node_data.attachments.begin() + position, attachment);
 }
 
 void Node::handle_remove_child(
@@ -353,15 +375,39 @@ void Node::handle_remove_child(
             return node.get() == child_node;
         }
     );
-    if (i != node_data.children.end())
-    {
+    if (i != node_data.children.end()) {
+        log->trace("Removing child '{}' from node '{}'", child_node->get_name(), get_name());
         node_data.children.erase(i, node_data.children.end());
-    }
-    else
-    {
+    } else {
         log->error(
-            "child node {} cannot be removed from parent node {}: child not found",
+            "child node '{}' cannot be removed from parent node '{}': child not found",
             child_node->get_name(),
+            get_name()
+        );
+    }
+}
+
+void Node::handle_remove_attachment(
+    Node_attachment* const attachment_to_remove
+)
+{
+    ERHE_VERIFY(attachment_to_remove != nullptr);
+
+    const auto i = std::remove_if(
+        node_data.attachments.begin(),
+        node_data.attachments.end(),
+        [attachment_to_remove](const std::shared_ptr<Node_attachment>& entry)
+        {
+            return entry.get() == attachment_to_remove;
+        }
+    );
+    if (i != node_data.attachments.end()) {
+        log->trace("Removing attachment '{}' from node '{}'", attachment_to_remove->get_name(), get_name());
+        node_data.attachments.erase(i, node_data.attachments.end());
+    } else {
+        log->error(
+            "attachment '{}' cannot be removed from node '{}': attachment not found",
+            attachment_to_remove->get_name(),
             get_name()
         );
     }
@@ -378,22 +424,24 @@ void Node::set_parent(
     node_data.parent = new_parent_node;
     Node* new_parent = node_data.parent.lock().get();
 
-    if (old_parent == new_parent)
-    {
+    auto shared_this = new_parent
+        ? std::static_pointer_cast<Node>(shared_from_this())
+        : std::shared_ptr<Node>{};
+    if (old_parent == new_parent) {
         return;
     }
 
-    if (old_parent)
-    {
+    if (old_parent) {
         old_parent->handle_remove_child(this);
     }
 
-    if (new_parent)
-    {
+    if (new_parent) {
         new_parent->handle_add_child(
-            std::static_pointer_cast<Node>(shared_from_this()),
+            shared_this,
             position
         );
+    } else {
+        log->trace("'{}' removed parent", get_name());
     }
 
     set_world_from_node(world_from_node);
@@ -403,7 +451,7 @@ void Node::set_parent(
             : 0
     );
     handle_parent_update(old_parent, new_parent);
-    sanity_check();
+    // sanity_check(); we might be deleted at this point due to smart ptr
 }
 
 void Node::set_parent(
@@ -411,17 +459,14 @@ void Node::set_parent(
     const std::size_t position
 )
 {
-    if (new_parent_node != nullptr)
-    {
+    if (new_parent_node != nullptr) {
         set_parent(
             std::static_pointer_cast<Node>(
                 new_parent_node->shared_from_this()
             ),
             position
         );
-    }
-    else
-    {
+    } else {
         set_parent(std::shared_ptr<Node>{}, position);
     }
 }
@@ -430,37 +475,34 @@ void Node::set_depth_recursive(const std::size_t depth)
 {
     ERHE_PROFILE_FUNCTION
 
-    if (node_data.depth == depth)
-    {
+    if (node_data.depth == depth)  {
         return;
     }
     node_data.depth = depth;
-    for (const auto& child : node_data.children)
-    {
+    for (const auto& child : node_data.children) {
         child->set_depth_recursive(depth + 1);
     }
 }
 
 void Node::handle_flag_bits_update(const uint64_t old_flag_bits, const uint64_t new_flag_bits)
 {
-    for (const auto& attachment : node_data.attachments)
-    {
+    for (const auto& attachment : node_data.attachments) {
         attachment->handle_node_flag_bits_update(old_flag_bits, new_flag_bits);
     }
 }
 
 void Node::handle_parent_update(
     Node* const old_parent,
-    Node* const new_parent)
+    Node* const new_parent
+)
 {
     ERHE_VERIFY(old_parent != new_parent);
     Scene_host* old_scene_host = old_parent != nullptr ? old_parent->get_item_host() : nullptr;
     Scene_host* new_scene_host = new_parent != nullptr ? new_parent->get_item_host() : nullptr;
-    if (old_scene_host != new_scene_host)
-    {
+    if (old_scene_host != new_scene_host) {
         handle_scene_host_update(old_scene_host, new_scene_host);
     }
-    sanity_check();
+    // sanity_check(); unable - handle_scene_host_update() above might destroy this node
 }
 
 void Node::handle_scene_host_update(
@@ -470,26 +512,22 @@ void Node::handle_scene_host_update(
 {
     ERHE_VERIFY(old_scene_host != new_scene_host);
 
-    if (old_scene_host != nullptr)
-    {
+    // TODO Danger - what if this causes node to be destructed?
+    for (const auto& attachment : node_data.attachments) {
+        attachment->handle_node_scene_host_update(old_scene_host, new_scene_host);
+    }
+
+    if (old_scene_host != nullptr) {
         old_scene_host->unregister_node(
             std::static_pointer_cast<Node>(
                 shared_from_this()
             )
         );
     }
-    if (new_scene_host != nullptr)
-    {
+    if (new_scene_host != nullptr) {
         new_scene_host->register_node(
-            std::static_pointer_cast<Node>(
-                shared_from_this()
-            )
+            std::static_pointer_cast<Node>(shared_from_this())
         );
-    }
-
-    for (const auto& attachment : node_data.attachments)
-    {
-        attachment->handle_node_scene_host_update(old_scene_host, new_scene_host);
     }
 }
 
@@ -502,8 +540,7 @@ void Node::handle_transform_update(const uint64_t serial) const
         : Node_transforms::get_next_serial();
 
     node_data.transforms.update_serial = effective_serial;
-    for (const auto& attachment : node_data.attachments)
-    {
+    for (const auto& attachment : node_data.attachments) {
         attachment->handle_node_transform_update();
     }
 }
@@ -511,11 +548,8 @@ void Node::handle_transform_update(const uint64_t serial) const
 auto Node::root() -> std::weak_ptr<Node>
 {
     const auto& current_parent = parent().lock();
-    if (!current_parent)
-    {
-        return std::static_pointer_cast<Node>(
-            shared_from_this()
-        );
+    if (!current_parent) {
+        return std::static_pointer_cast<Node>(shared_from_this());
     }
     return current_parent->root();
 }
@@ -545,15 +579,12 @@ void Node::update_transform(uint64_t serial) const
 void Node::update_world_from_node()
 {
     const auto& current_parent = parent().lock();
-    if (current_parent)
-    {
+    if (current_parent) {
         node_data.transforms.world_from_node.set(
             current_parent->world_from_node() * parent_from_node(),
             node_from_parent() * current_parent->node_from_world()
         );
-    }
-    else
-    {
+    } else {
         node_data.transforms.world_from_node.set(
             parent_from_node(),
             node_from_parent()
@@ -567,19 +598,15 @@ void Node::sanity_check() const
     sanity_check_root_path(this);
 
     const auto& current_parent = parent().lock();
-    if (current_parent)
-    {
+    if (current_parent) {
         bool child_found_in_parent = false;
-        for (const auto& child : current_parent->children())
-        {
-            if (child.get() == this)
-            {
+        for (const auto& child : current_parent->children()) {
+            if (child.get() == this) {
                 child_found_in_parent = true;
                 break;
             }
         }
-        if (!child_found_in_parent)
-        {
+        if (!child_found_in_parent) {
             log->error(
                 "Node {} parent {} does not have node as child",
                 get_name(),
@@ -588,10 +615,8 @@ void Node::sanity_check() const
         }
     }
 
-    for (const auto& child : node_data.children)
-    {
-        if (child->parent().lock().get() != this)
-        {
+    for (const auto& child : node_data.children) {
+        if (child->parent().lock().get() != this) {
             log->error(
                 "Node {} child {} parent == {}",
                 get_name(),
@@ -601,8 +626,7 @@ void Node::sanity_check() const
                     : "(none)"
             );
         }
-        if (child->get_depth() != get_depth() + 1)
-        {
+        if (child->get_depth() != get_depth() + 1) {
             log->error(
                 "Node {} depth = {}, child {} depth = {}",
                 get_name(),
@@ -611,24 +635,30 @@ void Node::sanity_check() const
                 child->get_depth()
             );
         }
-        if (child->get_item_host() != get_item_host())
-        {
+        Scene_host* child_host = child->get_item_host();
+        Scene_host* self_host  = get_item_host();
+        Scene* child_scene = (child_host != nullptr) ? child_host->get_hosted_scene() : nullptr;
+        Scene* self_scene  = (self_host  != nullptr) ? self_host ->get_hosted_scene() : nullptr;
+
+        if (child_host != self_host) {
             log->error(
-                "Scene host mismatch: parent node = {}, child node = {}",
+                "Scene host mismatch: parent node = `{}` host = `{}` scene = `{}`, child node = `{}` host = `{}` scene = `{}`",
                 get_name(),
-                child->get_name()
+                (self_host  != nullptr) ? self_host ->get_host_name() : "(none)",
+                (self_scene != nullptr) ? self_scene->get_name()      : "(none)",
+                child->get_name(),
+                (child_host  != nullptr) ? child_host ->get_host_name() : "(none)",
+                (child_scene != nullptr) ? child_scene->get_name()      : "(none)"
             );
         }
         child->sanity_check();
     }
 
-    for (const auto& attachment : node_data.attachments)
-    {
+    for (const auto& attachment : node_data.attachments) {
         auto* node = attachment->get_node();
-        if (node != this)
-        {
+        if (node != this) {
             log->error(
-                "Node {} attachment {} {} node == {}",
+                "Node '{}' attachment {} '{}' node == '{}'",
                 get_name(),
                 attachment->type_name(),
                 attachment->get_name(),
@@ -644,10 +674,8 @@ void Node::sanity_check() const
 void Node::sanity_check_root_path(const Node* node) const
 {
     const auto& current_parent = parent().lock();
-    if (current_parent)
-    {
-        if (current_parent.get() == node)
-        {
+    if (current_parent) {
+        if (current_parent.get() == node) {
             log->error(
                 "Node {} has itself as an ancestor",
                 node->get_name()
@@ -725,8 +753,7 @@ auto Node::node_from_world() const -> glm::mat4
 auto Node::world_from_parent() const -> glm::mat4
 {
     const auto& current_parent = parent().lock();
-    if (current_parent)
-    {
+    if (current_parent) {
         return current_parent->world_from_node();
     }
     return glm::mat4{1};
@@ -794,12 +821,9 @@ void Node::set_node_from_parent(const Transform& node_from_parent)
 void Node::set_world_from_node(const glm::mat4 world_from_node)
 {
     const auto& current_parent = parent().lock();
-    if (current_parent)
-    {
+    if (current_parent) {
         set_parent_from_node(current_parent->node_from_world() * world_from_node);
-    }
-    else
-    {
+    } else {
         set_parent_from_node(world_from_node);
     }
 }
@@ -807,12 +831,9 @@ void Node::set_world_from_node(const glm::mat4 world_from_node)
 void Node::set_world_from_node(const Transform& world_from_node)
 {
     const auto& current_parent = parent().lock();
-    if (current_parent)
-    {
+    if (current_parent) {
         set_parent_from_node(current_parent->node_from_world_transform() * world_from_node);
-    }
-    else
-    {
+    } else {
         set_parent_from_node(world_from_node);
     }
 }
@@ -822,15 +843,12 @@ void Node::set_node_from_world(const glm::mat4 node_from_world)
     node_data.transforms.world_from_node.set(glm::inverse(node_from_world), node_from_world);
     const auto& world_from_node = node_data.transforms.world_from_node.matrix();
     const auto& current_parent = parent().lock();
-    if (current_parent)
-    {
+    if (current_parent) {
         node_data.transforms.parent_from_node.set(
             current_parent->node_from_world() * world_from_node,
             node_from_world * current_parent->world_from_node()
         );
-    }
-    else
-    {
+    } else {
         node_data.transforms.parent_from_node = node_data.transforms.world_from_node;
     }
     handle_transform_update(Node_transforms::get_next_serial());
@@ -840,18 +858,27 @@ void Node::set_node_from_world(const Transform& node_from_world)
 {
     node_data.transforms.world_from_node = Transform::inverse(node_from_world);
     const auto& current_parent = parent().lock();
-    if (current_parent)
-    {
+    if (current_parent) {
         node_data.transforms.parent_from_node.set(
             current_parent->node_from_world() * node_data.transforms.world_from_node.matrix(),
             node_from_world.matrix() * current_parent->world_from_node()
         );
-    }
-    else
-    {
+    } else {
         node_data.transforms.parent_from_node = node_data.transforms.world_from_node;
     }
     handle_transform_update(Node_transforms::get_next_serial());
+}
+
+void Node::recursive_remove()
+{
+    while (!node_data.children.empty()) {
+        node_data.children.back()->recursive_remove();
+    }
+    while (!node_data.attachments.empty()) {
+        auto shared_attachment = node_data.attachments.back(); // keep alive
+        shared_attachment->set_node(nullptr);
+    }
+    set_parent({});
 }
 
 auto Node_data::diff_mask(
@@ -868,64 +895,50 @@ auto Node_data::diff_mask(
     return mask;
 }
 
+
+using namespace erhe::toolkit;
+
 auto is_node(const Item* const item) -> bool
 {
-    if (item == nullptr)
-    {
+    if (item == nullptr) {
         return false;
     }
-    using namespace erhe::toolkit;
     return test_all_rhs_bits_set(item->get_type(), Item_type::node);
 }
 
-auto is_node(
-    const std::shared_ptr<Item>& item
-) -> bool
+auto is_node(const std::shared_ptr<Item>& item) -> bool
 {
     return is_node(item.get());
 }
 
 auto as_node(Item* const item) -> Node*
 {
-    if (item == nullptr)
-    {
+    if (item == nullptr) {
         return nullptr;
     }
-    using namespace erhe::toolkit;
-    if (!test_all_rhs_bits_set(item->get_type(), Item_type::node))
-    {
+    if (!test_all_rhs_bits_set(item->get_type(), Item_type::node)) {
         return nullptr;
     }
-    return reinterpret_cast<Node*>(item);
+    return static_cast<Node*>(item);
 }
 
-auto as_node(
-    const std::shared_ptr<Item>& item
-) -> std::shared_ptr<Node>
+auto as_node(const std::shared_ptr<Item>& item) -> std::shared_ptr<Node>
 {
-    if (!item)
-    {
+    if (!item) {
         return {};
     }
-    using namespace erhe::toolkit;
-    if (!test_all_rhs_bits_set(item->get_type(), Item_type::node))
-    {
+    if (!test_all_rhs_bits_set(item->get_type(), Item_type::node)) {
         return {};
     }
     return std::static_pointer_cast<Node>(item);
 }
 
-auto as_node_attachment(
-    const std::shared_ptr<Item>& item
-) -> std::shared_ptr<Node_attachment>
+auto as_node_attachment(const std::shared_ptr<Item>& item) -> std::shared_ptr<Node_attachment>
 {
-    if (!item)
-    {
+    if (!item) {
         return {};
     }
-    using namespace erhe::toolkit;
-    if (!test_all_rhs_bits_set(item->get_type(), Item_type::node_attachment))
-    {
+    if (!test_all_rhs_bits_set(item->get_type(), Item_type::node_attachment)) {
         return {};
     }
     return std::static_pointer_cast<Node_attachment>(item);

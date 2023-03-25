@@ -1,9 +1,10 @@
 #include "erhe/application/rendergraph/multisample_resolve.hpp"
 #include "erhe/application/application_log.hpp"
 #include "erhe/application/graphics/gl_context_provider.hpp"
+#include "erhe/gl/command_info.hpp"
+#include "erhe/gl/enum_string_functions.hpp"
 #include "erhe/gl/wrapper_enums.hpp"
 #include "erhe/gl/wrapper_functions.hpp"
-#include "erhe/gl/enum_string_functions.hpp"
 #include "erhe/graphics/debug.hpp"
 #include "erhe/graphics/framebuffer.hpp"
 #include "erhe/graphics/renderbuffer.hpp"
@@ -38,8 +39,7 @@ Multisample_resolve_node::Multisample_resolve_node(
 
 void Multisample_resolve_node::reconfigure(const int sample_count)
 {
-    if (m_sample_count == sample_count)
-    {
+    if (m_sample_count == sample_count) {
         return;
     }
 
@@ -58,8 +58,7 @@ void Multisample_resolve_node::reconfigure(const int sample_count)
     ERHE_VERIFY(depth < rendergraph_max_depth);
 
     // TODO Validate resource_routing?
-    if (m_enabled)
-    {
+    if (m_enabled) {
         // TODO Validate key
         static_cast<void>(key);
         return m_color_texture;
@@ -78,8 +77,7 @@ void Multisample_resolve_node::reconfigure(const int sample_count)
     ERHE_VERIFY(depth < rendergraph_max_depth);
 
     // TODO Validate resource_routing?
-    if (m_enabled)
-    {
+    if (m_enabled) {
         // TODO check key
         static_cast<void>(key);
         return m_framebuffer;
@@ -111,8 +109,7 @@ void Multisample_resolve_node::execute_rendergraph_node()
     if (
         (output_viewport.width  < 1) ||
         (output_viewport.height < 1)
-    )
-    {
+    ) {
         return;
     }
 
@@ -121,9 +118,8 @@ void Multisample_resolve_node::execute_rendergraph_node()
         !m_color_texture ||
         (m_color_texture->width () != output_viewport.width ) ||
         (m_color_texture->height() != output_viewport.height)
-    )
-    {
-        log_rendergraph->info(
+    ) {
+        log_rendergraph->trace(
             "Resizing Multisample_resolve_node '{}' to {} x {}",
             get_name(),
             output_viewport.width,
@@ -146,13 +142,17 @@ void Multisample_resolve_node::execute_rendergraph_node()
             fmt::format("{} Multisample_resolve_node color texture", get_name())
         );
         const float clear_value[4] = { 1.0f, 0.0f, 1.0f, 1.0f };
-        gl::clear_tex_image(
-            m_color_texture->gl_name(),
-            0,
-            gl::Pixel_format::rgba,
-            gl::Pixel_type::float_,
-            &clear_value[0]
-        );
+        if (gl::is_command_supported(gl::Command::Command_glClearTexImage)) {
+            gl::clear_tex_image(
+                m_color_texture->gl_name(),
+                0,
+                gl::Pixel_format::rgba,
+                gl::Pixel_type::float_,
+                &clear_value[0]
+            );
+        } else {
+            // TODO
+        }
 
         m_depth_stencil_renderbuffer = std::make_unique<erhe::graphics::Renderbuffer>(
             gl::Internal_format::depth24_stencil8,
@@ -179,8 +179,7 @@ void Multisample_resolve_node::execute_rendergraph_node()
             gl::named_framebuffer_draw_buffers(m_framebuffer->gl_name(), 1, &draw_buffers[0]);
             gl::named_framebuffer_read_buffer (m_framebuffer->gl_name(), gl::Color_buffer::color_attachment0);
 
-            if (!m_framebuffer->check_status())
-            {
+            if (!m_framebuffer->check_status()) {
                 log_rendergraph->error("'{} Multisample_resolve_node framebuffer not complete", get_name());
                 m_framebuffer.reset();
                 return;
@@ -209,8 +208,7 @@ void Multisample_resolve_node::execute_rendergraph_node()
         gl::named_framebuffer_draw_buffers(m_framebuffer->gl_name(), 1, &draw_buffers[0]);
         gl::named_framebuffer_read_buffer (m_framebuffer->gl_name(), gl::Color_buffer::color_attachment0);
 
-        if (!m_framebuffer->check_status())
-        {
+        if (!m_framebuffer->check_status()) {
             log_rendergraph->error("{} Multisample_resolve_node framebuffer not complete", get_name());
             m_framebuffer.reset();
             return;
@@ -235,8 +233,7 @@ void Multisample_resolve_node::execute_rendergraph_node()
                 m_framebuffer->gl_name(),
                 gl::Framebuffer_target::draw_framebuffer
             );
-            if (status != gl::Framebuffer_status::framebuffer_complete)
-            {
+            if (status != gl::Framebuffer_status::framebuffer_complete) {
                 log_rendergraph->error(
                     "{} Multisample_resolve_node BlitFramebuffer read framebuffer status = {}",
                     get_name(),
@@ -249,14 +246,12 @@ void Multisample_resolve_node::execute_rendergraph_node()
 
         gl::bind_framebuffer(gl::Framebuffer_target::draw_framebuffer, output_framebuffer_name);
 #if !defined(NDEBUG)
-        if (output_framebuffer_name != 0)
-        {
+        if (output_framebuffer_name != 0) {
             const auto status = gl::check_named_framebuffer_status(
                 output_framebuffer_name,
                 gl::Framebuffer_target::draw_framebuffer
             );
-            if (status != gl::Framebuffer_status::framebuffer_complete)
-            {
+            if (status != gl::Framebuffer_status::framebuffer_complete) {
                 log_rendergraph->error(
                     "{} Multisample_resolve_node BlitFramebuffer draw framebuffer status = {}",
                     get_name(),

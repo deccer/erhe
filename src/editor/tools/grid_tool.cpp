@@ -65,9 +65,17 @@ void Grid_tool::initialize_component()
     set_flags      (Tool_flags::background);
     set_icon       (g_icon_set->icons.grid);
     g_tools->register_tool(this);
-    erhe::application::g_imgui_windows->register_imgui_window(this);
+    erhe::application::g_imgui_windows->register_imgui_window(this, "grid");
 
-    //const auto& config = get<erhe::application::Configuration>()->grid;
+    auto ini = erhe::application::get_ini("erhe.ini", "grid");
+    ini->get("enabled",     config.enabled);
+    ini->get("major_color", config.major_color);
+    ini->get("minor_color", config.minor_color);
+    ini->get("major_width", config.major_width);
+    ini->get("minor_width", config.minor_width);
+    ini->get("cell_size",   config.cell_size);
+    ini->get("cell_div",    config.cell_div);
+    ini->get("cell_count",  config.cell_count);
 
     std::shared_ptr<Grid> grid = std::make_shared<Grid>();
 
@@ -94,23 +102,19 @@ void Grid_tool::tool_render(
 {
     ERHE_PROFILE_FUNCTION
 
-    if (erhe::application::g_line_renderer_set == nullptr)
-    {
+    if (erhe::application::g_line_renderer_set == nullptr) {
         return;
     }
 
-    if (context.camera == nullptr)
-    {
+    if (context.camera == nullptr) {
         return;
     }
 
-    if (!m_enable)
-    {
+    if (!m_enable) {
         return;
     }
 
-    for (const auto& grid : m_grids)
-    {
+    for (const auto& grid : m_grids) {
         grid->render(context);
     }
 }
@@ -126,8 +130,7 @@ void Grid_tool::viewport_toolbar(bool& hovered)
             ? erhe::application::Item_mode::active
             : erhe::application::Item_mode::normal
     );
-    if (ImGui::IsItemHovered())
-    {
+    if (ImGui::IsItemHovered()) {
         hovered = true;
         ImGui::SetTooltip(
             m_enable
@@ -136,18 +139,15 @@ void Grid_tool::viewport_toolbar(bool& hovered)
         );
     };
 
-    if (grid_pressed)
-    {
+    if (grid_pressed) {
         m_enable = !m_enable;
     }
 }
 
 auto get_plane_transform(Grid_plane_type plane_type) -> glm::mat4
 {
-    switch (plane_type)
-    {
-        case Grid_plane_type::XY:
-        {
+    switch (plane_type) {
+        case Grid_plane_type::XY: {
             return glm::mat4{
                 1.0f, 0.0f, 0.0f, 0.0f,
                 0.0f, 0.0f,-1.0f, 0.0f,
@@ -155,12 +155,10 @@ auto get_plane_transform(Grid_plane_type plane_type) -> glm::mat4
                 0.0f, 0.0f, 0.0f, 1.0f
             };
         }
-        case Grid_plane_type::XZ:
-        {
+        case Grid_plane_type::XZ: {
             return glm::mat4{1.0f};
         }
-        case Grid_plane_type::YZ:
-        {
+        case Grid_plane_type::YZ: {
             return glm::mat4{
                 0.0f, 1.0f, 0.0f, 0.0f,
                 1.0f, 0.0f, 0.0f, 0.0f,
@@ -168,8 +166,7 @@ auto get_plane_transform(Grid_plane_type plane_type) -> glm::mat4
                 0.0f, 0.0f, 0.0f, 1.0f
             };
         }
-        default:
-        {
+        default: {
             return glm::mat4{1.0f};
         }
     }
@@ -185,8 +182,7 @@ void Grid_tool::imgui()
     ImGui::NewLine();
 
     std::vector<const char*> grid_names;
-    for (auto& grid : m_grids)
-    {
+    for (auto& grid : m_grids) {
         grid_names.push_back(grid->get_name().c_str());
     }
     ImGui::SetNextItemWidth(300);
@@ -198,8 +194,7 @@ void Grid_tool::imgui()
     );
     ImGui::NewLine();
 
-    if (!m_grids.empty())
-    {
+    if (!m_grids.empty()) {
         m_grid_index = std::min(m_grid_index, static_cast<int>(grid_names.size() - 1));
         m_grids[m_grid_index]->imgui();
     }
@@ -208,16 +203,14 @@ void Grid_tool::imgui()
 
     constexpr ImVec2 button_size{110.0f, 0.0f};
     const bool add_pressed = ImGui::Button("Add Grid", button_size);
-    if (add_pressed)
-    {
+    if (add_pressed) {
         std::shared_ptr<Grid> new_grid = std::make_shared<Grid>();
         //new_grid->name = "new grid"; TODO
         m_grids.push_back(new_grid);
     }
 
     ImGui::SameLine();
-    if (ImGui::Button("Remove Grid", button_size))
-    {
+    if (ImGui::Button("Remove Grid", button_size)) {
         m_grids.erase(m_grids.begin() + m_grid_index);
     }
 #endif
@@ -228,25 +221,20 @@ auto Grid_tool::update_hover(
     const glm::vec3 ray_direction_in_world
 ) const -> Grid_hover_position
 {
-    Grid_hover_position result
-    {
+    Grid_hover_position result{
         .grid = nullptr
     };
     float min_distance = std::numeric_limits<float>::max();
 
-    if (m_enable)
-    {
-        for (auto& grid : m_grids)
-        {
+    if (m_enable) {
+        for (auto& grid : m_grids) {
             const auto position_in_world_opt = grid->intersect_ray(ray_origin_in_world, ray_direction_in_world);
-            if (!position_in_world_opt.has_value())
-            {
+            if (!position_in_world_opt.has_value()) {
                 continue;
             }
             const glm::vec3 position_in_world = position_in_world_opt.value();
             const float     distance          = glm::distance(ray_origin_in_world, position_in_world);
-            if (distance < min_distance)
-            {
+            if (distance < min_distance) {
                 min_distance    = distance;
                 result.position = position_in_world;
                 result.grid     = grid.get();

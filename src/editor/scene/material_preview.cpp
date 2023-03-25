@@ -16,14 +16,15 @@
 #include "erhe/geometry/geometry.hpp"
 #include "erhe/geometry/shapes/sphere.hpp"
 #include "erhe/geometry/shapes/torus.hpp"
-#include "erhe/gl/wrapper_functions.hpp"
+#include "erhe/gl/command_info.hpp"
 #include "erhe/gl/enum_bit_mask_operators.hpp"
+#include "erhe/gl/wrapper_functions.hpp"
 #include "erhe/graphics/framebuffer.hpp"
 #include "erhe/graphics/renderbuffer.hpp"
 #include "erhe/graphics/texture.hpp"
-
+#include "erhe/physics/iworld.hpp"
 #include "erhe/primitive/primitive_builder.hpp"
-
+#include "erhe/raytrace/iscene.hpp"
 #include "erhe/scene/light.hpp"
 #include "erhe/scene/mesh.hpp"
 #include "erhe/scene/node.hpp"
@@ -50,18 +51,30 @@ Material_preview::~Material_preview() noexcept
 void Material_preview::deinitialize_component()
 {
     ERHE_VERIFY(g_material_preview == this);
+    m_scene_root->sanity_check();
+
     m_color_texture.reset();
     m_depth_renderbuffer.reset();
     m_framebuffer.reset();
-    m_scene_root.reset();
-    m_node.reset();
+
     m_mesh.reset();
-    m_key_light_node.reset();
+    m_node.reset();
+
     m_key_light.reset();
-    m_camera_node.reset();
+    m_key_light_node.reset();
+
     m_camera.reset();
-    m_content_library.reset();
+    m_camera_node.reset();
+
+    m_shadow_texture.reset();
     m_last_material.reset();
+    m_content_library.reset();
+    m_scene_root->sanity_check();
+
+    const auto use_count = m_scene_root.use_count();
+    ERHE_VERIFY(use_count == 1);
+    m_scene_root.reset();
+    reset_hover_slots();
     g_material_preview = nullptr;
 }
 
@@ -81,8 +94,6 @@ void Material_preview::initialize_component()
         m_content_library,
         "Material preview scene"
     );
-
-    g_editor_scenes->register_scene_root(m_scene_root);
 
     m_scene_root->get_shared_scene()->disable_flag_bits(erhe::scene::Item_flags::show_in_ui);
 
@@ -114,13 +125,17 @@ void Material_preview::make_rendertarget()
     );
     m_color_texture->set_debug_label("Material Preview Color Texture");
     const float clear_value[4] = { 1.0f, 0.0f, 0.5f, 0.0f };
-    gl::clear_tex_image(
-        m_color_texture->gl_name(),
-        0,
-        gl::Pixel_format::rgba,
-        gl::Pixel_type::float_,
-        &clear_value[0]
-    );
+    if (gl::is_command_supported(gl::Command::Command_glClearTexImage)) {
+        gl::clear_tex_image(
+            m_color_texture->gl_name(),
+            0,
+            gl::Pixel_format::rgba,
+            gl::Pixel_type::float_,
+            &clear_value[0]
+        );
+    } else {
+        // TODO
+    }
 
     m_depth_renderbuffer = std::make_unique<erhe::graphics::Renderbuffer>(
         m_depth_format,
@@ -147,8 +162,7 @@ void Material_preview::make_rendertarget()
     gl::named_framebuffer_draw_buffers(m_framebuffer->gl_name(), 1, &draw_buffers[0]);
     gl::named_framebuffer_read_buffer(m_framebuffer->gl_name(), gl::Color_buffer::color_attachment0);
 
-    if (!m_framebuffer->check_status())
-    {
+    if (!m_framebuffer->check_status()) {
         m_framebuffer.reset();
     }
 
@@ -166,13 +180,17 @@ void Material_preview::make_rendertarget()
     const bool reverse_depth = erhe::application::g_configuration->graphics.reverse_depth;
     m_shadow_texture->set_debug_label("Material Preview Shadowmap");
     float depth_clear_value = reverse_depth ? 0.0f : 1.0f;
-    gl::clear_tex_image(
-        m_shadow_texture->gl_name(),
-        0,
-        gl::Pixel_format::depth_component,
-        gl::Pixel_type::float_,
-        &depth_clear_value
-    );
+    if (gl::is_command_supported(gl::Command::Command_glClearTexImage)) {
+        gl::clear_tex_image(
+            m_shadow_texture->gl_name(),
+            0,
+            gl::Pixel_format::depth_component,
+            gl::Pixel_type::float_,
+            &depth_clear_value
+        );
+    } else {
+        // TODO
+    }
 }
 
 void Material_preview::make_preview_scene()
@@ -201,7 +219,7 @@ void Material_preview::make_preview_scene()
 
     using Item_flags = erhe::scene::Item_flags;
     m_mesh->mesh_data.layer_id = m_scene_root->layers().content()->id;
-    m_mesh->enable_flag_bits(Item_flags::content | Item_flags::visible);
+    m_mesh->enable_flag_bits(Item_flags::content | Item_flags::visible | Item_flags::opaque);
     m_node->attach          (m_mesh);
     m_node->enable_flag_bits(Item_flags::content | Item_flags::visible);
 
@@ -306,10 +324,12 @@ void Material_preview::render_preview(
     gl::bind_framebuffer(gl::Framebuffer_target::draw_framebuffer, m_framebuffer->gl_name());
     gl::clear(
         gl::Clear_buffer_mask::color_buffer_bit |
-        gl::Clear_buffer_mask::depth_buffer_bit |
-        gl::Clear_buffer_mask::stencil_buffer_bit
+        gl::Clear_buffer_mask::depth_buffer_bit
     );
-    g_editor_rendering->render_content(context, true);
+    using Fill_mode      = IEditor_rendering::Fill_mode;
+    using Blend_mode     = IEditor_rendering::Blend_mode;
+    using Selection_mode = IEditor_rendering::Selection_mode;
+    g_editor_rendering->render_content(context, Fill_mode::fill, Blend_mode::opaque, Selection_mode::not_selected);
     gl::disable(gl::Enable_cap::scissor_test);
 }
 

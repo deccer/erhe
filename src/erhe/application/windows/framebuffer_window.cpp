@@ -2,7 +2,7 @@
 
 #include "erhe/application/imgui/imgui_windows.hpp"
 #include "erhe/application/graphics/gl_context_provider.hpp"
-
+#include "erhe/gl/command_info.hpp"
 #include "erhe/gl/wrapper_functions.hpp"
 #include "erhe/graphics/debug.hpp"
 #include "erhe/graphics/framebuffer.hpp"
@@ -39,8 +39,6 @@ void Framebuffer_window::initialize()
     using erhe::graphics::Color_blend_state;
     const Scoped_gl_context gl_context;
 
-    g_imgui_windows->register_imgui_window(this);
-
     m_vertex_input = std::make_unique<erhe::graphics::Vertex_input_state>(
         erhe::graphics::Vertex_input_state_data{}
     );
@@ -58,10 +56,7 @@ auto Framebuffer_window::to_content(const glm::vec2 position_in_root) const -> g
     const float content_x = static_cast<float>(position_in_root.x) - m_content_rect_x;
     const float content_y = static_cast<float>(position_in_root.y) - m_content_rect_y;
     //const float content_flip_y = m_content_rect_height - content_y;
-    return {
-        content_x,
-        content_y
-    };
+    return glm::vec2{content_x, content_y};
 }
 
 void Framebuffer_window::bind_framebuffer()
@@ -88,8 +83,7 @@ void Framebuffer_window::update_framebuffer()
     if (
         (imgui_available_size.x < 1) ||
         (imgui_available_size.y < 1)
-    )
-    {
+    ) {
         return;
     }
 
@@ -102,8 +96,7 @@ void Framebuffer_window::update_framebuffer()
     if (
         (source_size.x == 0) ||
         (source_size.y == 0)
-    )
-    {
+    ) {
         return;
     }
 
@@ -118,8 +111,7 @@ void Framebuffer_window::update_framebuffer()
         m_texture &&
         (m_texture->width()  == size.x) &&
         (m_texture->height() == size.y)
-    )
-    {
+    ) {
         return;
     }
 
@@ -137,13 +129,17 @@ void Framebuffer_window::update_framebuffer()
     );
     m_texture->set_debug_label(m_debug_label);
     const float clear_value[4] = { 1.0f, 0.0f, 1.0f, 1.0f };
-    gl::clear_tex_image(
-        m_texture->gl_name(),
-        0,
-        gl::Pixel_format::rgba,
-        gl::Pixel_type::float_,
-        &clear_value[0]
-    );
+    if (gl::is_command_supported(gl::Command::Command_glClearTexImage)) {
+        gl::clear_tex_image(
+            m_texture->gl_name(),
+            0,
+            gl::Pixel_format::rgba,
+            gl::Pixel_type::float_,
+            &clear_value[0]
+        );
+    } else {
+        // TODO
+    }
 
     Framebuffer::Create_info create_info;
     create_info.attach(gl::Framebuffer_attachment::color_attachment0, m_texture.get());
@@ -161,8 +157,7 @@ void Framebuffer_window::imgui()
         m_texture &&
         (m_texture->width() > 0) &&
         (m_texture->height() > 0)
-    )
-    {
+    ) {
         ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2{0.0f, 0.0f});
         image(
             m_texture,

@@ -113,8 +113,16 @@ erhe_target_sources_grouped(
     tools/brushes/brush.hpp
     tools/brushes/brush_tool.cpp
     tools/brushes/brush_tool.hpp
-    tools/brushes/create.cpp
-    tools/brushes/create.hpp
+    tools/brushes/create/create.cpp
+    tools/brushes/create/create.hpp
+    tools/brushes/create/create_box.cpp
+    tools/brushes/create/create_box.hpp
+    tools/brushes/create/create_cone.cpp
+    tools/brushes/create/create_cone.hpp
+    tools/brushes/create/create_torus.cpp
+    tools/brushes/create/create_torus.hpp
+    tools/brushes/create/create_uv_sphere.cpp
+    tools/brushes/create/create_uv_sphere.hpp
     tools/trs/handle_visualizations.cpp
     tools/trs/handle_visualizations.hpp
     tools/trs/move_tool.cpp
@@ -213,6 +221,8 @@ erhe_target_sources_grouped(
     res/icons/rotate.svg
     res/icons/spot_light.svg
 
+    res/shaders/brdf_slice.vert
+    res/shaders/brdf_slice.frag
     res/shaders/brush.vert
     res/shaders/brush.frag
     res/shaders/anisotropic_slope.vert
@@ -239,6 +249,8 @@ erhe_target_sources_grouped(
     res/shaders/standard.vert
     res/shaders/standard.frag
     res/shaders/standard_debug.frag
+    res/shaders/sky.vert
+    res/shaders/sky.frag
     res/shaders/text.vert
     res/shaders/text.frag
     res/shaders/textured.vert
@@ -290,6 +302,7 @@ target_link_libraries(
     erhe::gl
     erhe::graphics
     erhe::log
+    erhe::net
     erhe::physics
     erhe::primitive
     erhe::scene
@@ -340,3 +353,40 @@ set_target_properties(
 
 erhe_target_settings(${_target})
 set_property(TARGET ${_target} PROPERTY FOLDER "erhe")
+
+########
+
+set(_target "net-test")
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+add_executable(${_target})
+erhe_target_sources_grouped(
+    ${_target} TREE "${CMAKE_CURRENT_SOURCE_DIR}" FILES
+    net_test.cpp
+)
+
+target_link_libraries(
+    ${_target}
+    PRIVATE
+    erhe::application
+    erhe::log
+    erhe::net
+    cpp-terminal
+    cxxopts
+    mINI
+    RectangleBinPack
+    rapidjson
+)
+
+target_include_directories(${_target} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+
+set_target_properties(
+    ${_target} PROPERTIES
+    CXX_STANDARD                  20
+    CXX_STANDARD_REQUIRED         YES
+    CXX_EXTENSIONS                NO
+    VS_DEBUGGER_WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+)
+
+erhe_target_settings(${_target})
+set_property(TARGET ${_target} PROPERTY FOLDER "erhe")
+

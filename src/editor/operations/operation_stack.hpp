@@ -1,10 +1,5 @@
 #pragma once
 
-#include "tools/tool.hpp"
-
-#include "erhe/application/commands/command.hpp"
-#include "erhe/application/imgui/imgui_window.hpp"
-
 #include "erhe/components/components.hpp"
 
 #include <memory>
@@ -15,26 +10,22 @@ namespace editor
 class IOperation;
 class Operation_stack;
 
-class Undo_command
-    : public erhe::application::Command
-{
-public:
-    Undo_command();
-    auto try_call() -> bool override;
-};
+class Operation_stack_impl;
 
-class Redo_command
-    : public erhe::application::Command
+class IOperation_stack
 {
 public:
-    Redo_command();
-    auto try_call() -> bool override;
+    virtual ~IOperation_stack() noexcept;
+
+    [[nodiscard]] virtual auto can_undo() const -> bool = 0;
+    [[nodiscard]] virtual auto can_redo() const -> bool = 0;
+    virtual void push(const std::shared_ptr<IOperation>& operation) = 0;
+    virtual void undo() = 0;
+    virtual void redo() = 0;
 };
 
 class Operation_stack
     : public erhe::components::Component
-    , public Tool
-    , public erhe::application::Imgui_window
 {
 public:
     static constexpr std::string_view c_type_name{"Operation_stack"};
@@ -50,29 +41,10 @@ public:
     void initialize_component       () override;
     void deinitialize_component     () override;
 
-    // Implements Window
-    void imgui() override;
-
-    // Public API
-    [[nodiscard]] auto can_undo() const -> bool;
-    [[nodiscard]] auto can_redo() const -> bool;
-    void push(const std::shared_ptr<IOperation>& operation);
-    void undo();
-    void redo();
-
 private:
-    void imgui(
-        const char*                                     stack_label,
-        const std::vector<std::shared_ptr<IOperation>>& operations
-    );
-
-    Undo_command                             m_undo_command;
-    Redo_command                             m_redo_command;
-
-    std::vector<std::shared_ptr<IOperation>> m_executed;
-    std::vector<std::shared_ptr<IOperation>> m_undone;
+    std::unique_ptr<Operation_stack_impl> m_impl;
 };
 
-extern Operation_stack* g_operation_stack;
+extern IOperation_stack* g_operation_stack;
 
 } // namespace editor

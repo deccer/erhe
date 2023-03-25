@@ -36,16 +36,35 @@ namespace erhe::application
 namespace
 {
 
-static constexpr gl::Buffer_storage_mask storage_mask{
+static constexpr gl::Buffer_storage_mask storage_mask_persistent{
     gl::Buffer_storage_mask::map_coherent_bit   |
     gl::Buffer_storage_mask::map_persistent_bit |
     gl::Buffer_storage_mask::map_write_bit
 };
-static constexpr gl::Map_buffer_access_mask access_mask{
+static constexpr gl::Buffer_storage_mask storage_mask_not_persistent{
+    gl::Buffer_storage_mask::map_write_bit
+};
+inline auto storage_mask() -> gl::Buffer_storage_mask
+{
+    return erhe::graphics::Instance::info.use_persistent_buffers
+        ? storage_mask_persistent
+        : storage_mask_not_persistent;
+}
+
+static constexpr gl::Map_buffer_access_mask access_mask_persistent{
     gl::Map_buffer_access_mask::map_coherent_bit   |
     gl::Map_buffer_access_mask::map_persistent_bit |
     gl::Map_buffer_access_mask::map_write_bit
 };
+static constexpr gl::Map_buffer_access_mask access_mask_not_persistent{
+    gl::Map_buffer_access_mask::map_write_bit
+};
+inline auto access_mask() -> gl::Map_buffer_access_mask
+{
+    return erhe::graphics::Instance::info.use_persistent_buffers
+        ? access_mask_persistent
+        : access_mask_not_persistent;
+}
 
 }
 
@@ -116,7 +135,6 @@ Line_renderer_set* g_line_renderer_set{nullptr};
 
 Line_renderer_set::Line_renderer_set()
     : Component{c_type_name}
-    , Imgui_window{c_title}
 {
 }
 
@@ -128,20 +146,18 @@ Line_renderer_set::~Line_renderer_set() noexcept
 void Line_renderer_set::deinitialize_component()
 {
     ERHE_VERIFY(g_line_renderer_set == this);
-    for (auto& i : visible)
-    {
+    for (auto& i : visible) {
         i.reset();
     }
-    for (auto& i : hidden)
-    {
+    for (auto& i : hidden) {
         i.reset();
     }
+    m_pipeline.reset();
     g_line_renderer_set = nullptr;
 }
 
 void Line_renderer_set::declare_required_components()
 {
-    require<Imgui_windows>();
     require<Gl_context_provider>();
     require<Configuration      >();
     require<Shader_monitor     >();
@@ -154,18 +170,16 @@ void Line_renderer_set::initialize_component()
     ERHE_PROFILE_FUNCTION
     ERHE_VERIFY(g_line_renderer_set == nullptr);
 
-    g_imgui_windows->register_imgui_window(this);
-
     const Scoped_gl_context gl_context;
 
     erhe::graphics::Scoped_debug_group line_renderer_initialization{c_line_renderer_initialize_component};
 
-    m_pipeline.initialize();
+    m_pipeline = Line_renderer_pipeline();
+    m_pipeline->initialize();
 
-    for (unsigned int stencil_reference = 0; stencil_reference <= s_max_stencil_reference; ++stencil_reference)
-    {
-        visible.at(stencil_reference) = std::make_unique<Line_renderer>("visible", 8u + stencil_reference, &m_pipeline);
-        hidden .at(stencil_reference) = std::make_unique<Line_renderer>("hidden",  8u + stencil_reference, &m_pipeline);
+    for (unsigned int stencil_reference = 0; stencil_reference <= s_max_stencil_reference; ++stencil_reference) {
+        visible.at(stencil_reference) = std::make_unique<Line_renderer>("visible", 8u + stencil_reference, &m_pipeline.value());
+        hidden .at(stencil_reference) = std::make_unique<Line_renderer>("hidden",  8u + stencil_reference, &m_pipeline.value());
     }
 
     g_line_renderer_set = this;
@@ -209,17 +223,13 @@ void Line_renderer_pipeline::initialize()
         };
 
         Shader_stages::Prototype prototype(create_info);
-        if (prototype.is_valid())
-        {
+        if (prototype.is_valid()) {
             shader_stages = std::make_unique<Shader_stages>(std::move(prototype));
 
-            if (g_shader_monitor != nullptr)
-            {
+            if (g_shader_monitor != nullptr) {
                 g_shader_monitor->add(create_info, shader_stages.get());
             }
-        }
-        else
-        {
+        } else {
             const auto current_path = std::filesystem::current_path();
             log_startup->error(
                 "Unable to load Line_renderer shader - check working directory '{}'",
@@ -245,12 +255,6 @@ void Line_renderer_set::next_frame()
 {
     for (auto& entry : visible) entry->next_frame();
     for (auto& entry : hidden ) entry->next_frame();
-}
-
-void Line_renderer_set::imgui()
-{
-    for (auto& entry: hidden ) entry->imgui();
-    for (auto& entry: visible) entry->imgui();
 }
 
 void Line_renderer_set::render(
@@ -337,14 +341,14 @@ Line_renderer::Frame_resources::Frame_resources(
     : vertex_buffer{
         gl::Buffer_target::array_buffer,
         vertex_format.stride() * vertex_count,
-        storage_mask,
-        access_mask
+        storage_mask(),
+        access_mask()
     }
     , view_buffer{
         gl::Buffer_target::uniform_buffer,
         view_stride * view_count,
-        storage_mask,
-        access_mask
+        storage_mask(),
+        access_mask()
     }
     , vertex_input{
         erhe::graphics::Vertex_input_state_data::make(
@@ -375,8 +379,7 @@ Line_renderer::Line_renderer(
     constexpr std::size_t vertex_count  = 512 * 1024;
     constexpr std::size_t view_stride   = 256;
     constexpr std::size_t view_count    = 16;
-    for (std::size_t slot = 0; slot < s_frame_resources_count; ++slot)
-    {
+    for (std::size_t slot = 0; slot < s_frame_resources_count; ++slot) {
         m_frame_resources.emplace_back(
             stencil_reference,
             reverse_depth,
@@ -399,6 +402,7 @@ auto Line_renderer::current_frame_resources() -> Frame_resources&
 
 void Line_renderer::next_frame()
 {
+    ERHE_VERIFY(!m_inside_begin_end);
     m_current_frame_resource_slot = (m_current_frame_resource_slot + 1) % s_frame_resources_count;
     m_view_writer  .reset();
     m_vertex_writer.reset();
@@ -409,9 +413,8 @@ void Line_renderer::begin()
 {
     ERHE_VERIFY(!m_inside_begin_end);
 
-    m_view_writer  .begin();
-    m_vertex_writer.begin();
-    m_line_count = 0;
+    m_vertex_writer.begin(&current_frame_resources().vertex_buffer);
+    m_line_count       = 0;
     m_inside_begin_end = true;
 }
 
@@ -420,6 +423,7 @@ void Line_renderer::end()
     ERHE_VERIFY(m_inside_begin_end);
 
     m_inside_begin_end = false;
+    //m_view_writer  .end();
     m_vertex_writer.end();
 }
 
@@ -448,16 +452,14 @@ void Line_renderer::add_lines(
 {
     ERHE_VERIFY(m_inside_begin_end);
 
-    auto vertex_gpu_data = current_frame_resources().vertex_buffer.map();
-
-    std::byte* const       start      = vertex_gpu_data.data() + m_vertex_writer.write_offset;
-    const std::size_t      byte_count = vertex_gpu_data.size_bytes();
-    const std::size_t      word_count = byte_count / sizeof(float);
-    const gsl::span<float> gpu_float_data{reinterpret_cast<float*   >(start), word_count};
+    auto                   vertex_gpu_data = current_frame_resources().vertex_buffer.map();
+    std::byte* const       start           = vertex_gpu_data.data();
+    const std::size_t      byte_count      = vertex_gpu_data.size_bytes();
+    const std::size_t      word_count      = byte_count / sizeof(float);
+    const gsl::span<float> gpu_float_data{reinterpret_cast<float*>(start), word_count};
 
     std::size_t word_offset = 0;
-    for (const Line& line : lines)
-    {
+    for (const Line& line : lines) {
         const vec4 p0{transform * vec4{line.p0, 1.0f}};
         const vec4 p1{transform * vec4{line.p1, 1.0f}};
         put(vec3{p0} / p0.w, m_line_thickness, m_line_color, gpu_float_data, word_offset);
@@ -475,16 +477,14 @@ void Line_renderer::add_lines(
 {
     ERHE_VERIFY(m_inside_begin_end);
 
-    auto vertex_gpu_data = current_frame_resources().vertex_buffer.map();
-
-    std::byte* const       start      = vertex_gpu_data.data() + m_vertex_writer.write_offset;
-    const std::size_t      byte_count = vertex_gpu_data.size_bytes();
-    const std::size_t      word_count = byte_count / sizeof(float);
-    const gsl::span<float> gpu_float_data{reinterpret_cast<float*   >(start), word_count};
+    auto                   vertex_gpu_data = current_frame_resources().vertex_buffer.map();
+    std::byte* const       start           = vertex_gpu_data.data();
+    const std::size_t      byte_count      = vertex_gpu_data.size_bytes();
+    const std::size_t      word_count      = byte_count / sizeof(float);
+    const gsl::span<float> gpu_float_data{reinterpret_cast<float*>(start), word_count};
 
     std::size_t word_offset = 0;
-    for (const Line4& line : lines)
-    {
+    for (const Line4& line : lines) {
         const vec4 p0{transform * vec4{vec3{line.p0}, 1.0f}};
         const vec4 p1{transform * vec4{vec3{line.p1}, 1.0f}};
         put(vec3{p0} / p0.w, line.p0.w, m_line_color, gpu_float_data, word_offset);
@@ -536,16 +536,14 @@ void Line_renderer::add_lines(
 {
     ERHE_VERIFY(m_inside_begin_end);
 
-    auto vertex_gpu_data = current_frame_resources().vertex_buffer.map();
-
-    std::byte* const       start      = vertex_gpu_data.data() + m_vertex_writer.write_offset;
-    const std::size_t      byte_count = vertex_gpu_data.size_bytes();
-    const std::size_t      word_count = byte_count / sizeof(float);
-    const gsl::span<float> gpu_float_data{reinterpret_cast<float*   >(start), word_count};
+    auto                   vertex_gpu_data = current_frame_resources().vertex_buffer.map();
+    std::byte* const       start           = vertex_gpu_data.data();
+    const std::size_t      byte_count      = vertex_gpu_data.size_bytes();
+    const std::size_t      word_count      = byte_count / sizeof(float);
+    const gsl::span<float> gpu_float_data{reinterpret_cast<float*>(start), word_count};
 
     std::size_t word_offset = 0;
-    for (const Line& line : lines)
-    {
+    for (const Line& line : lines) {
         put(line.p0, m_line_thickness, m_line_color, gpu_float_data, word_offset);
         put(line.p1, m_line_thickness, m_line_color, gpu_float_data, word_offset);
     }
@@ -619,15 +617,6 @@ void Line_renderer::add_cube(
     }
 }
 
-void Line_renderer::imgui()
-{
-    for (const auto& fun : m_imgui)
-    {
-        fun();
-    }
-    m_imgui.clear();
-}
-
 void Line_renderer::add_sphere(
     const erhe::scene::Transform&       transform,
     const vec4&                         edge_color,
@@ -647,8 +636,7 @@ void Line_renderer::add_sphere(
     const vec3 axis_z{0.0f, 0.0f, radius};
     const mat4 I{1.0f};
     set_thickness(great_circle_thickness);
-    for (int i = 0; i < step_count; ++i)
-    {
+    for (int i = 0; i < step_count; ++i) {
         const float t0 = glm::two_pi<float>() * static_cast<float>(i    ) / static_cast<float>(step_count);
         const float t1 = glm::two_pi<float>() * static_cast<float>(i + 1) / static_cast<float>(step_count);
         add_lines(
@@ -697,8 +685,7 @@ void Line_renderer::add_sphere(
         //);
     }
 
-    if (camera_world_from_node == nullptr)
-    {
+    if (camera_world_from_node == nullptr) {
         return;
     }
 
@@ -736,8 +723,7 @@ void Line_renderer::add_sphere(
     const vec3 axis_b         = h * up_direction;
 
     set_thickness(edge_thickness);
-    for (int i = 0; i < step_count; ++i)
-    {
+    for (int i = 0; i < step_count; ++i) {
         const float t0 = glm::two_pi<float>() * static_cast<float>(i    ) / static_cast<float>(step_count);
         const float t1 = glm::two_pi<float>() * static_cast<float>(i + 1) / static_cast<float>(step_count);
         add_lines(
@@ -822,8 +808,7 @@ void Line_renderer::add_cone(
     };
 
     std::vector<Cone_edge> cone_edges;
-    for (int i = 0; i < side_count; ++i)
-    {
+    for (int i = 0; i < side_count; ++i) {
         const float phi = glm::two_pi<float>() * static_cast<float>(i) / static_cast<float>(side_count);
         const vec3  sin_phi_z = std::cos(phi) * axis_x;
         const vec3  cos_phi_x = std::sin(phi) * axis_z;
@@ -907,62 +892,50 @@ void Line_renderer::add_cone(
         }
     );
 
-    for (size_t i = 0; i < cone_edges.size(); ++i)
-    {
+    for (size_t i = 0; i < cone_edges.size(); ++i) {
         const std::size_t next_i      = (i + 1) % cone_edges.size();
         const auto&       edge        = cone_edges[i];
         const auto&       next_edge   = cone_edges[next_i];
         const float       avg_n_dot_v = 0.5f * edge.n_dot_v + 0.5f * next_edge.n_dot_v;
-        if (sign(edge.n_dot_v) != sign(next_edge.n_dot_v))
-        {
-            if (std::abs(edge.n_dot_v) < std::abs(next_edge.n_dot_v))
-            {
+        if (sign(edge.n_dot_v) != sign(next_edge.n_dot_v)) {
+            if (std::abs(edge.n_dot_v) < std::abs(next_edge.n_dot_v)) {
                 sign_flip_edges.push_back(edge);
-            }
-            else
-            {
+            } else {
                 sign_flip_edges.push_back(next_edge);
             }
         }
-        if (bottom_radius > 0.0f)
-        {
-            {
-                add_lines(
-                    m,
-                    bottom_visible || (avg_n_dot_v > 0.0)
-                        ? major_color
-                        : minor_color,
+        if (bottom_radius > 0.0f) {
+            add_lines(
+                m,
+                bottom_visible || (avg_n_dot_v > 0.0)
+                    ? major_color
+                    : minor_color,
+                {
                     {
-                        {
-                            edge.p0,
-                            next_edge.p0
-                        }
+                        edge.p0,
+                        next_edge.p0
                     }
-                );
-            }
+                }
+            );
         }
 
-        if (top_radius > 0.0f)
-        {
-            {
-                add_lines(
-                    m,
-                    top_visible || (avg_n_dot_v > 0.0)
-                        ? major_color
-                        : minor_color,
+        if (top_radius > 0.0f) {
+            add_lines(
+                m,
+                top_visible || (avg_n_dot_v > 0.0)
+                    ? major_color
+                    : minor_color,
+                {
                     {
-                        {
-                            edge.p1,
-                            next_edge.p1
-                        }
+                        edge.p1,
+                        next_edge.p1
                     }
-                );
-            }
+                }
+            );
         }
     }
 
-    for (auto& edge : sign_flip_edges)
-    {
+    for (auto& edge : sign_flip_edges) {
         add_lines(m, major_color, { { edge.p0, edge.p1 } } );
     }
 }
@@ -1034,8 +1007,7 @@ auto ray_torus_intersection(
     // bounding sphere
     {
     	float h = n * n - m + (tor.x + tor.y) * (tor.x + tor.y);
-    	if (h < 0.0f)
-        {
+    	if (h < 0.0f) {
             return -1.0f;
         }
     	//float t = -n-sqrt(h); // could use this to compute intersections from ro+t*rd
@@ -1048,10 +1020,9 @@ auto ray_torus_intersection(
     float k1 = k * n + Ra2 * ro.z * rd.z;
     float k0 = k * k + Ra2 * ro.z * ro.z - Ra2 * ra2;
 
-    #if 1
+#if 1
     // prevent |c1| from being too close to zero
-    if (std::abs(k3 * (k3 * k3 - k2) + k1) < 0.01)
-    {
+    if (std::abs(k3 * (k3 * k3 - k2) + k1) < 0.01) {
         po = -1.0f;
         float tmp = k1; k1 = k3; k3 = tmp;
         k0 = 1.0f / k0;
@@ -1059,7 +1030,7 @@ auto ray_torus_intersection(
         k2 = k2 * k0;
         k3 = k3 * k0;
     }
-	#endif
+#endif
 
     float c2 = 2.0f * k2 - 3.0f * k3 * k3;
     float c1 = k3 * (k3 * k3 - k2) + k1;
@@ -1075,16 +1046,13 @@ auto ray_torus_intersection(
 
     float h = R * R - Q * Q * Q;
     float z = 0.0f;
-    if (h < 0.0f)
-    {
+    if (h < 0.0f) {
     	// 4 intersections
         float sQ = std::sqrt(Q);
         z = 2.0f * sQ * std::cos(
             std::acos(R / (sQ * Q)) / 3.0f
         );
-    }
-    else
-    {
+    } else {
         // 2 intersections
         float sQ = std::pow(
             std::sqrt(h) + std::abs(R),
@@ -1096,18 +1064,13 @@ auto ray_torus_intersection(
 
     float d1 = z     - 3.0f * c2;
     float d2 = z * z - 3.0f * c0;
-    if (std::abs(d1) < 1.0e-4)
-    {
-        if (d2 < 0.0f)
-        {
+    if (std::abs(d1) < 1.0e-4) {
+        if (d2 < 0.0f) {
             return -1.0f;
         }
         d2 = std::sqrt(d2);
-    }
-    else
-    {
-        if (d1 < 0.0f)
-        {
+    } else {
+        if (d1 < 0.0f) {
             return -1.0f;
         }
         d1 = std::sqrt(d1 / 2.0f);
@@ -1119,8 +1082,7 @@ auto ray_torus_intersection(
     float result = 1e20;
 
     h = d1 * d1 - z + d2;
-    if (h > 0.0f)
-    {
+    if (h > 0.0f) {
         h = std::sqrt(h);
         float t1 = -d1 - h - k3; t1 = (po < 0.0f) ? 2.0f / t1 : t1;
         float t2 = -d1 + h - k3; t2 = (po < 0.0f) ? 2.0f / t2 : t2;
@@ -1129,8 +1091,7 @@ auto ray_torus_intersection(
     }
 
     h = d1 * d1 - z - d2;
-    if (h > 0.0f)
-    {
+    if (h > 0.0f) {
         h = std::sqrt(h);
         float t1 = d1 - h - k3; t1 = (po < 0.0f) ? 2.0f / t1 : t1;
         float t2 = d1 + h - k3; t2 = (po < 0.0f) ? 2.0f / t2 : t2;
@@ -1158,8 +1119,7 @@ auto ray_torus_intersection(
     // bounding sphere
     {
     	double h = n * n - m + (tor.x + tor.y) * (tor.x + tor.y);
-    	if (h < 0.0)
-        {
+    	if (h < 0.0) {
             return -1.0;
         }
     	//float t = -n-sqrt(h); // could use this to compute intersections from ro+t*rd
@@ -1174,8 +1134,7 @@ auto ray_torus_intersection(
 
     #if 1
     // prevent |c1| from being too close to zero
-    if (std::abs(k3 * (k3 * k3 - k2) + k1) < 0.001)
-    {
+    if (std::abs(k3 * (k3 * k3 - k2) + k1) < 0.001) {
         po = -1.0;
         double tmp = k1; k1 = k3; k3 = tmp;
         k0 = 1.0 / k0;
@@ -1198,16 +1157,13 @@ auto ray_torus_intersection(
 
     double h = R * R - Q * Q * Q;
     double z = 0.0;
-    if (h < 0.0)
-    {
+    if (h < 0.0) {
     	// 4 intersections
         double sQ = std::sqrt(Q);
         z = 2.0 * sQ * std::cos(
             std::acos(R / (sQ * Q)) / 3.0
         );
-    }
-    else
-    {
+    } else {
         // 2 intersections
         double sQ = std::pow(
             std::sqrt(h) + std::abs(R),
@@ -1219,18 +1175,13 @@ auto ray_torus_intersection(
 
     double d1 = z     - 3.0 * c2;
     double d2 = z * z - 3.0 * c0;
-    if (std::abs(d1) < 1.0e-6)
-    {
-        if (d2 < 0.0)
-        {
+    if (std::abs(d1) < 1.0e-6) {
+        if (d2 < 0.0) {
             return -1.0;
         }
         d2 = std::sqrt(d2);
-    }
-    else
-    {
-        if (d1 < 0.0)
-        {
+    } else {
+        if (d1 < 0.0) {
             return -1.0;
         }
         d1 = std::sqrt(d1 / 2.0);
@@ -1242,8 +1193,7 @@ auto ray_torus_intersection(
     double result = 1e20;
 
     h = d1 * d1 - z + d2;
-    if (h > 0.0)
-    {
+    if (h > 0.0) {
         h = std::sqrt(h);
         double t1 = -d1 - h - k3; t1 = (po < 0.0) ? 2.0 / t1 : t1;
         double t2 = -d1 + h - k3; t2 = (po < 0.0) ? 2.0 / t2 : t2;
@@ -1252,8 +1202,7 @@ auto ray_torus_intersection(
     }
 
     h = d1 * d1 - z - d2;
-    if (h > 0.0)
-    {
+    if (h > 0.0) {
         h = std::sqrt(h);
         double t1 = d1 - h - k3; t1 = (po < 0.0) ? 2.0 / t1 : t1;
         double t2 = d1 + h - k3; t2 = (po < 0.0) ? 2.0 / t2 : t2;
@@ -1294,11 +1243,9 @@ void Line_renderer::add_torus(
     const     vec2 tor                     = vec2{major_radius, minor_radius};
     constexpr int  k = 8;
     set_thickness(major_thickness);
-    for (int i = 0; i < major_step_count; ++i)
-    {
-        const float rel_major = static_cast<float>(i    ) / static_cast<float>(major_step_count);
-        for (int j = 0; j < minor_step_count * k; ++j)
-        {
+    for (int i = 0; i < major_step_count; ++i) {
+        const float rel_major = static_cast<float>(i) / static_cast<float>(major_step_count);
+        for (int j = 0; j < minor_step_count * k; ++j) {
             const float       rel_minor      = static_cast<float>(j    ) / static_cast<float>(minor_step_count * k);
             const float       rel_minor_next = static_cast<float>(j + 1) / static_cast<float>(minor_step_count * k);
             const Torus_point a       = torus_point(major_radius, minor_radius, rel_major, rel_minor);
@@ -1347,11 +1294,9 @@ void Line_renderer::add_torus(
         }
     }
 
-    for (int j = 0; j < minor_step_count; ++j)
-    {
-        const float rel_minor = static_cast<float>(j    ) / static_cast<float>(minor_step_count);
-        for (int i = 0; i < major_step_count * k; ++i)
-        {
+    for (int j = 0; j < minor_step_count; ++j) {
+        const float rel_minor = static_cast<float>(j) / static_cast<float>(minor_step_count);
+        for (int i = 0; i < major_step_count * k; ++i) {
             const float       rel_major      = static_cast<float>(i    ) / static_cast<float>(major_step_count * k);
             const float       rel_major_next = static_cast<float>(i + 1) / static_cast<float>(major_step_count * k);
             const Torus_point a = torus_point(major_radius, minor_radius, rel_major,      rel_minor);
@@ -1382,24 +1327,21 @@ void Line_renderer::render(
     const bool                  show_hidden_lines
 )
 {
-    if (m_line_count == 0)
-    {
+    if (m_line_count == 0) {
         return;
     }
 
     const auto* camera_node = camera.get_node();
-    if (camera_node == nullptr)
-    {
+    if (camera_node == nullptr) {
         return;
     }
-
 
     ERHE_PROFILE_FUNCTION
     ERHE_PROFILE_GPU_SCOPE(c_line_renderer_render)
 
     erhe::graphics::Scoped_debug_group line_renderer_initialization{c_line_renderer_render};
 
-    m_view_writer.begin();
+    m_view_writer.begin(&current_frame_resources().view_buffer);
 
     const auto  projection_transforms  = camera.projection_transforms(viewport);
     const mat4  clip_from_world        = projection_transforms.clip_from_world.matrix();
@@ -1447,8 +1389,7 @@ void Line_renderer::render(
     );
     const auto count = static_cast<GLsizei>(m_line_count * 2);
 
-    if (show_hidden_lines)
-    {
+    if (show_hidden_lines) {
         const auto& pipeline = current_frame_resources().pipeline_hidden;
         erhe::graphics::g_opengl_state_tracker->execute(pipeline);
 
@@ -1459,8 +1400,7 @@ void Line_renderer::render(
         );
     }
 
-    if (show_visible_lines)
-    {
+    if (show_visible_lines) {
         const auto& pipeline = current_frame_resources().pipeline_visible;
         erhe::graphics::g_opengl_state_tracker->execute(pipeline);
 

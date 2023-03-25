@@ -57,7 +57,7 @@ void Log_window::declare_required_components()
 void Log_window::initialize_component()
 {
     ERHE_VERIFY(g_log_window == nullptr);
-    g_imgui_windows->register_imgui_window(this);
+    g_imgui_windows->register_imgui_window(this, "log");
     m_min_size[0] = 220.0f;
     m_min_size[1] = 120.0f;
 
@@ -89,8 +89,7 @@ void Log_window::imgui()
             ImGuiTreeNodeFlags_DefaultOpen |
             ImGuiTreeNodeFlags_Framed
         )
-    )
-    {
+    ) {
         ImGui::SetNextItemWidth(100.0f);
 
         ImGui::DragInt(
@@ -118,14 +117,12 @@ void Log_window::imgui()
 
         ImGui::SameLine();
         ImGui::SetNextItemWidth(100.0f);
-        if (ImGui::Button("Clear"))
-        {
+        if (ImGui::Button("Clear")) {
             tail->trim(0);
         }
         ImGui::SameLine();
         ImGui::SetNextItemWidth(100.0f);
-        if (ImGui::Checkbox("Paused", &m_paused))
-        {
+        if (ImGui::Checkbox("Paused", &m_paused)) {
             tail->set_paused(m_paused);
         }
         ImGui::SameLine();
@@ -142,15 +139,13 @@ void Log_window::imgui()
             tail_entries.size()
         );
         ImGui::PushFont(g_imgui_renderer->mono_font());
-        if (m_last_on_top)
-        {
+        if (m_last_on_top) {
             for (
                 auto i = tail_entries.rbegin(),
                 end = tail_entries.rbegin() + visible_count;
                 i != end;
                 ++i
-            )
-            {
+            ) {
                 auto& entry = *i;
                 ImGui::SetNextItemWidth(100.0f);
                 ImGui::TextColored(
@@ -171,16 +166,13 @@ void Log_window::imgui()
                 //}
             }
 
-        }
-        else
-        {
+        } else {
             for (
                 auto i = tail_entries.begin(),
                 end = tail_entries.begin() + visible_count;
                 i != end;
                 ++i
-            )
-            {
+            ) {
                 auto& entry = *i;
                 ImGui::SetNextItemWidth(100.0f);
                 ImGui::TextColored(
@@ -210,11 +202,9 @@ void Log_window::imgui()
             "Frame",
             ImGuiTreeNodeFlags_DefaultOpen | ImGuiTreeNodeFlags_Framed
         )
-    )
-    {
+    ) {
         auto& frame_entries = frame->get_log();
-        for (const auto& entry : frame_entries)
-        {
+        for (const auto& entry : frame_entries) {
             ImGui::SetNextItemWidth(100.0f);
             ImGui::TextUnformatted (entry.timestamp.c_str());
             ImGui::SameLine        ();

@@ -12,11 +12,6 @@ namespace erhe::geometry
     class Geometry;
 }
 
-namespace erhe::physics
-{
-    class IWorld;
-}
-
 namespace erhe::primitive
 {
     class Build_info;
@@ -25,15 +20,10 @@ namespace erhe::primitive
 namespace erhe::scene
 {
     class Mesh;
-    class Mesh_layer;
-    class Node;
-    class Scene;
 }
 
 namespace editor
 {
-
-class Selection_tool;
 
 class Mesh_operation
     : public IOperation
@@ -59,8 +49,8 @@ protected:
 
     // Implements IOperation
     [[nodiscard]] auto describe() const -> std::string override;
-    void execute(const Operation_context& context) override;
-    void undo   (const Operation_context& context) override;
+    void execute() override;
+    void undo   () override;
 
     // Public API
     void add_entry(Entry&& entry);
@@ -69,8 +59,6 @@ protected:
     );
 
 private:
-    Selection_tool*    m_selection_tool{nullptr};
-
     Parameters         m_parameters;
     std::vector<Entry> m_entries;
 };

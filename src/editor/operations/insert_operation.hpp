@@ -7,36 +7,10 @@
 #include "erhe/scene/node.hpp"
 #include "erhe/toolkit/verify.hpp"
 
-namespace erhe::geometry
-{
-    class Geometry;
-}
-
-namespace erhe::scene
-{
-    class Light_layer;
-    class Mesh_layer;
-    class Scene;
-};
-
-namespace erhe::physics
-{
-    class IWorld;
-};
-
-namespace erhe::raytrace
-{
-    class IScene;
-};
-
 namespace editor
 {
 
 class Node_attach_operation;
-class Node_physics;
-class Node_raytrace;
-class Scene_root;
-class Selection_tool;
 
 class Node_transform_operation
     : public IOperation
@@ -55,8 +29,8 @@ public:
 
     // Implements IOperation
     [[nodiscard]] auto describe() const -> std::string override;
-    void execute(const Operation_context& context) override;
-    void undo   (const Operation_context& context) override;
+    void execute() override;
+    void undo   () override;
 
 private:
     Parameters m_parameters;
@@ -74,13 +48,11 @@ public:
 
     static auto inverse(const Mode mode) -> Mode
     {
-        switch (mode)
-        {
+        switch (mode) {
             //using enum Mode;
             case Mode::insert: return Mode::remove;
             case Mode::remove: return Mode::insert;
-            default:
-            {
+            default: {
                 ERHE_FATAL("Bad Context::Mode %04x", static_cast<unsigned int>(mode));
                 // unreachable return Mode::insert;
             }
@@ -105,8 +77,8 @@ public:
 
     // Implements IOperation
     [[nodiscard]] auto describe() const -> std::string override;
-    void execute(const Operation_context& context) override;
-    void undo   (const Operation_context& context) override;
+    void execute() override;
+    void undo   () override;
 
 private:
     Mode                                                m_mode;

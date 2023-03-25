@@ -1,5 +1,6 @@
 #include "map_editor/map_tool_window.hpp"
 
+#include "hextiles_log.hpp"
 #include "map_editor/map_editor.hpp"
 #include "map_editor/terrain_palette_window.hpp"
 #include "map_generator/map_generator.hpp"
@@ -11,6 +12,7 @@
 
 #include "erhe/application/imgui/imgui_windows.hpp"
 #include "erhe/application/imgui/imgui_renderer.hpp"
+#include "erhe/toolkit/file.hpp"
 #include "erhe/toolkit/verify.hpp"
 
 #include <gsl/assert>
@@ -41,7 +43,7 @@ void Map_tool_window::initialize_component()
 {
     ERHE_VERIFY(g_map_tool_window == nullptr);
 
-    erhe::application::g_imgui_windows->register_imgui_window(this);
+    erhe::application::g_imgui_windows->register_imgui_window(this, "map_tool");
     hide();
 
     g_map_tool_window = this;
@@ -51,18 +53,29 @@ void Map_tool_window::imgui()
 {
     constexpr ImVec2 button_size{100.0f, 0.0f};
 
-    if (ImGui::Button("Back to Menu", button_size))
-    {
+    if (ImGui::Button("Back to Menu", button_size)) {
         g_menu_window->show_menu();
     }
-    if (ImGui::Button("Generator", button_size))
-    {
+    if (ImGui::Button("Generator", button_size)) {
         g_map_generator->show();
+    }
+    if (ImGui::Button("Load Map")) {
+        const auto path_opt = erhe::toolkit::select_file();
+        if (path_opt.has_value()) {
+            File_read_stream file{path_opt.value()};
+            g_map_editor->get_map()->read(file);
+        }
+    }
+    if (ImGui::Button("Save Map")) {
+        const auto path_opt = erhe::toolkit::select_file();
+        if (path_opt.has_value()) {
+            File_write_stream file{path_opt.value()};
+            g_map_editor->get_map()->write(file);
+        }
     }
 
     const auto hover_pos_opt = g_map_editor->get_hover_tile_position();
-    if (hover_pos_opt.has_value())
-    {
+    if (hover_pos_opt.has_value()) {
         const auto hover_pos = hover_pos_opt.value();
         ImGui::Text("Hover pos = %d, %d", hover_pos.x, hover_pos.y);
     }
@@ -70,14 +83,12 @@ void Map_tool_window::imgui()
 #if 0
     ImGui::Combo("Grid", &m_grid, c_grid_mode_strings, IM_ARRAYSIZE(c_grid_mode_strings));
     //ImGui::Text("Zoom: %.2f", m_zoom);
-    if (!m_hover_window_position.has_value())
-    {
+    if (!m_hover_window_position.has_value()) {
         return;
     }
 
     auto input_sink = m_editor_view->input_sink();
-    if (input_sink != this)
-    {
+    if (input_sink != this) {
         return;
     }
     const auto window_position = m_hover_window_position.value();
@@ -97,13 +108,11 @@ void Map_tool_window::tile_info(const Tile_coordinate tile_position)
     const auto&          map            = g_map_editor->get_map();
     const terrain_tile_t terrain_tile   = map->get_terrain_tile(tile_position);
     const auto&          terrain_shapes = g_tile_renderer->get_terrain_shapes();
-    if (terrain_tile >= terrain_shapes.size())
-    {
+    if (terrain_tile >= terrain_shapes.size()) {
         return;
     }
     const auto terrain = g_tiles->get_terrain_from_tile(terrain_tile);
-    if (terrain >= terrain_shapes.size())
-    {
+    if (terrain >= terrain_shapes.size()) {
         return;
     }
 

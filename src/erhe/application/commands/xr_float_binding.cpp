@@ -30,14 +30,13 @@ auto Xr_float_binding::on_value_changed(
 {
     auto* const command = get_command();
 
-    if (command->get_command_state() == State::Disabled)
-    {
+    if (command->get_command_state() == State::Disabled) {
         return false;
     }
 
     bool consumed{false};
     command->try_ready();
-    consumed = command->try_call(input);
+    consumed = command->try_call_with_input(input);
     log_input_event_consumed->trace(
         "{} consumed OpenXR float input event",
         command->get_name()

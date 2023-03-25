@@ -3,6 +3,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <filesystem>
 #include <limits>
 #include <vector>
 
@@ -15,6 +16,7 @@ namespace hextiles
 class File_write_stream
 {
 public:
+    explicit File_write_stream(const std::filesystem::path& path);
     explicit File_write_stream(const char* path);
     ~File_write_stream() noexcept;
 
@@ -32,8 +34,7 @@ public:
         Expects(size <= std::numeric_limits<uint32_t>::max());
         const uint32_t size_u32 = static_cast<uint32_t>(size);
         op(size_u32);
-        for (const auto& element : v)
-        {
+        for (const auto& element : v) {
             op(v);
         }
     }
@@ -45,6 +46,7 @@ private:
 class File_read_stream
 {
 public:
+    explicit File_read_stream(const std::filesystem::path& path);
     explicit File_read_stream(const char* path);
     ~File_read_stream() noexcept;
 
@@ -62,8 +64,7 @@ public:
         op(size_u32);
         v.resize(size_u32);
         v.shrink_to_fit();
-        for (auto& element : v)
-        {
+        for (auto& element : v) {
             op(v);
         }
     }

@@ -31,6 +31,10 @@ Icon_set::~Icon_set()
 void Icon_set::deinitialize_component()
 {
     ERHE_VERIFY(g_icon_set == this);
+    const erhe::application::Scoped_gl_context gl_context;
+    m_small.reset();
+    m_large.reset();
+    m_hotbar.reset();
     g_icon_set = nullptr;
 }
 
@@ -46,7 +50,11 @@ void Icon_set::initialize_component()
     ERHE_PROFILE_FUNCTION
     ERHE_VERIFY(g_icon_set == nullptr);
 
-    const auto& config = *erhe::application::g_configuration;
+    auto ini = erhe::application::get_ini("erhe.ini", "icons");
+    ini->get("small_icon_size",  config.small_icon_size);
+    ini->get("large_icon_size",  config.large_icon_size);
+    ini->get("hotbar_icon_size", config.hotbar_icon_size);
+
     m_row_count    = 16;
     m_column_count = 16;
     m_row          = 0;
@@ -54,9 +62,9 @@ void Icon_set::initialize_component()
 
     const erhe::application::Scoped_gl_context gl_context;
 
-    m_small  = Icon_rasterization(config.imgui.small_icon_size, m_column_count, m_row_count);
-    m_large  = Icon_rasterization(config.imgui.large_icon_size, m_column_count, m_row_count);
-    m_hotbar = Icon_rasterization(config.hotbar.icon_size,      m_column_count, m_row_count);
+    m_small  = Icon_rasterization(config.small_icon_size,  m_column_count, m_row_count);
+    m_large  = Icon_rasterization(config.large_icon_size,  m_column_count, m_row_count);
+    m_hotbar = Icon_rasterization(config.hotbar_icon_size, m_column_count, m_row_count);
 
     const auto icon_directory = std::filesystem::path("res") / "icons";
 
@@ -104,8 +112,7 @@ auto Icon_set::load(const std::filesystem::path& path) -> glm::vec2
 
     //const auto  current_path = std::filesystem::current_path();
     const auto document = lunasvg::Document::loadFromFile(path.string());
-    if (!document)
-    {
+    if (!document) {
         log_svg->error("Unable to load {}", path.string());
         return glm::vec2{0.0f, 0.0f};
     }
@@ -113,13 +120,12 @@ auto Icon_set::load(const std::filesystem::path& path) -> glm::vec2
     const float u = static_cast<float>(m_column) / static_cast<float>(m_column_count);
     const float v = static_cast<float>(m_row   ) / static_cast<float>(m_row_count);
 
-    m_small .rasterize(*document.get(), m_column, m_row);
-    m_large .rasterize(*document.get(), m_column, m_row);
-    m_hotbar.rasterize(*document.get(), m_column, m_row);
+    m_small ->rasterize(*document.get(), m_column, m_row);
+    m_large ->rasterize(*document.get(), m_column, m_row);
+    m_hotbar->rasterize(*document.get(), m_column, m_row);
 
     ++m_column;
-    if (m_column >= m_column_count)
-    {
+    if (m_column >= m_column_count) {
         m_column = 0;
         ++m_row;
     }
@@ -133,8 +139,7 @@ auto Icon_set::load(const std::filesystem::path& path) -> glm::vec2
 
 auto Icon_set::get_icon(const erhe::scene::Light_type type) const -> const glm::vec2
 {
-    switch (type)
-    {
+    switch (type) {
         //using enum erhe::scene::Light_type;
         case erhe::scene::Light_type::spot:        return icons.spot_light;
         case erhe::scene::Light_type::directional: return icons.directional_light;
@@ -145,17 +150,17 @@ auto Icon_set::get_icon(const erhe::scene::Light_type type) const -> const glm::
 
 [[nodiscard]] auto Icon_set::get_small_rasterization() const -> const Icon_rasterization&
 {
-    return m_small;
+    return m_small.value();
 }
 
 [[nodiscard]] auto Icon_set::get_large_rasterization() const -> const Icon_rasterization&
 {
-    return m_large;
+    return m_large.value();
 }
 
 [[nodiscard]] auto Icon_set::get_hotbar_rasterization() const -> const Icon_rasterization&
 {
-    return m_hotbar;
+    return m_hotbar.value();
 }
 
 }

@@ -57,10 +57,6 @@ public:
 
     auto initialize_components(Application* application, int argc, char** argv) -> bool;
     void component_initialization_complete(bool initialization_succeeded);
-    void init_window(
-        erhe::application::Imgui_window&                      imgui_window,
-        const erhe::application::Configuration::Window_entry& config
-    ) const;
 
 private:
     erhe::components::Components                 m_components;
@@ -109,12 +105,7 @@ void init_logs()
     erhe::application::initialize_logging();
     erhe::components::initialize_logging();
     gl::initialize_logging();
-    //erhe::geometry::initialize_logging();
     erhe::graphics::initialize_logging();
-    //erhe::physics::initialize_logging();
-    //erhe::primitive::initialize_logging();
-    //erhe::raytrace::initialize_logging();
-    //erhe::scene::initialize_logging();
     erhe::toolkit::initialize_logging();
     erhe::ui::initialize_logging();
 
@@ -177,11 +168,10 @@ auto Application_impl::initialize_components(
 
     erhe::application::log_startup->info("Initializing early components");
     configuration.initialize_component();
-    //renderdoc_capture_support.initialize_component();
+    renderdoc_capture_support.initialize_component();
 
     erhe::application::log_startup->info("Creating window");
-    if (!window.create_gl_window())
-    {
+    if (!window.create_gl_window()) {
         erhe::application::log_startup->error("GL window creation failed, aborting");
         return false;
     }
@@ -189,8 +179,7 @@ auto Application_impl::initialize_components(
     erhe::application::log_startup->info("Launching component initialization");
     m_components.launch_component_initialization(configuration.threading.parallel_initialization);
 
-    if (configuration.threading.parallel_initialization)
-    {
+    if (configuration.threading.parallel_initialization) {
         erhe::application::log_startup->info("Parallel init -> Providing worker GL contexts");
         gl_context_provider.provide_worker_contexts(
             window.get_context_window(),
@@ -206,14 +195,6 @@ auto Application_impl::initialize_components(
     erhe::application::log_startup->info("Component initialization complete");
     component_initialization_complete(true);
 
-    erhe::application::log_startup->info("Window configuration");
-    const auto& config = configuration.windows;
-    init_window(commands_window, config.commands);
-    init_window(log_window     , config.log     );
-    //init_window(line_renderer_set     , config.line_renderer       );
-    //init_window(performance_window    , config.performance         );
-    //init_window(pipelines             , config.pipelines           );
-
     gl::clip_control(gl::Clip_control_origin::lower_left, gl::Clip_control_depth::zero_to_one);
     gl::disable     (gl::Enable_cap::primitive_restart);
     gl::enable      (gl::Enable_cap::primitive_restart_fixed_index);
@@ -227,40 +208,22 @@ auto Application_impl::initialize_components(
 
 void Application_impl::component_initialization_complete(const bool initialization_succeeded)
 {
-    if (initialization_succeeded)
-    {
+    if (initialization_succeeded) {
         gl::enable(gl::Enable_cap::primitive_restart);
         gl::primitive_restart_index(0xffffu);
 
-        if (erhe::application::g_window == nullptr)
-        {
+        if (erhe::application::g_window == nullptr) {
             return;
         }
 
         auto* const context_window = window.get_context_window();
-        if (context_window == nullptr)
-        {
+        if (context_window == nullptr) {
             return;
         }
 
         auto& root_view = context_window->get_root_view();
 
         root_view.reset_view(erhe::application::g_view);
-    }
-}
-
-void Application_impl::init_window(
-    erhe::application::Imgui_window&                      imgui_window,
-    const erhe::application::Configuration::Window_entry& config
-) const
-{
-    if (config.window)
-    {
-        imgui_window.show();
-    }
-    else
-    {
-        imgui_window.hide();
     }
 }
 

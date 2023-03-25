@@ -16,8 +16,7 @@ namespace {
 
 auto from_erhe(const erhe::toolkit::Keycode keycode) -> ImGuiKey
 {
-    switch (keycode)
-    {
+    switch (keycode) {
         case erhe::toolkit::Key_tab          : return ImGuiKey_Tab           ;
         case erhe::toolkit::Key_left         : return ImGuiKey_LeftArrow     ;
         case erhe::toolkit::Key_right        : return ImGuiKey_RightArrow    ;
@@ -127,7 +126,7 @@ auto from_erhe(const erhe::toolkit::Keycode keycode) -> ImGuiKey
     }
 }
 
-void update_key_modifiers(ImGuiIO& io, uint32_t modifier_mask)
+void update_key_modifiers(ImGuiIO& io, const uint32_t modifier_mask)
 {
     io.AddKeyEvent(ImGuiMod_Ctrl,  (modifier_mask & erhe::toolkit::Key_modifier_bit_ctrl ) != 0);
     io.AddKeyEvent(ImGuiMod_Shift, (modifier_mask & erhe::toolkit::Key_modifier_bit_shift) != 0);
@@ -192,12 +191,6 @@ auto Imgui_viewport::want_capture_mouse() const -> bool
     return io.WantCaptureMouse && !m_request_mouse;
 }
 
-void Imgui_viewport::on_focus(int focused)
-{
-    ImGuiIO& io = m_imgui_context->IO;
-    io.AddFocusEvent(focused != 0);
-}
-
 [[nodiscard]] auto Imgui_viewport::has_cursor() const -> bool
 {
     return m_has_cursor;
@@ -222,7 +215,74 @@ void Imgui_viewport::update_input_request(
     m_request_mouse    = request_mouse;
 }
 
-void Imgui_viewport::on_cursor_enter(int entered)
+auto Imgui_viewport::get_mouse_position() const -> glm::vec2
+{
+    ImGuiIO& io = m_imgui_context->IO;
+    return glm::vec2{io.MousePos.x, io.MousePos.y};
+}
+
+void Imgui_viewport::builtin_imgui_window_menu()
+{
+    if (ImGui::BeginMenu("ImGui"))
+    {
+        ImGui::MenuItem("Demo",             "", &m_imgui_builtin_windows.demo);
+        ImGui::MenuItem("Style Editor",     "", &m_imgui_builtin_windows.style_editor);
+        ImGui::MenuItem("Metrics/Debugger", "", &m_imgui_builtin_windows.metrics);
+        ImGui::MenuItem("Stack Tool",       "", &m_imgui_builtin_windows.stack_tool);
+        ImGui::EndMenu();
+    }
+}
+
+void Imgui_viewport::menu()
+{
+    ERHE_VERIFY(g_imgui_windows != nullptr);
+
+    if (ImGui::BeginMainMenuBar()) {
+        g_imgui_windows->window_menu(this);
+        ImGui::EndMainMenuBar();
+    }
+    if (m_imgui_builtin_windows.demo) {
+        ImGui::ShowDemoWindow(&m_imgui_builtin_windows.demo);
+    }
+
+    if (m_imgui_builtin_windows.style_editor) {
+        ImGui::Begin("Dear ImGui Style Editor", &m_imgui_builtin_windows.style_editor);
+        ImGui::ShowStyleEditor();
+        ImGui::End();
+    }
+
+    if (m_imgui_builtin_windows.metrics) {
+        ImGui::ShowMetricsWindow(&m_imgui_builtin_windows.metrics);
+    }
+
+    if (m_imgui_builtin_windows.stack_tool) {
+        ImGui::ShowStackToolWindow(&m_imgui_builtin_windows.stack_tool);
+    }
+}
+
+#pragma region Events
+void Imgui_viewport::on_focus(const int focused)
+{
+    std::lock_guard<std::mutex> lock{m_event_mutex};
+    m_events.push_back(
+        Imgui_event{
+            .type = Imgui_event_type::focus_event,
+            .u = {
+                .focus_event = {
+                    .focused = focused
+                }
+            }
+        }
+    );
+}
+
+void Imgui_viewport::on_event(const Focus_event& focus_event)
+{
+    ImGuiIO& io = m_imgui_context->IO;
+    io.AddFocusEvent(focus_event.focused != 0);
+}
+
+void Imgui_viewport::on_cursor_enter(const int entered)
 {
     SPDLOG_LOGGER_TRACE(
         log_imgui,
@@ -231,7 +291,22 @@ void Imgui_viewport::on_cursor_enter(int entered)
         entered
     );
 
-    m_has_cursor = entered != 0;
+    std::lock_guard<std::mutex> lock{m_event_mutex};
+    m_events.push_back(
+        Imgui_event{
+            .type = Imgui_event_type::cursor_enter_event,
+            .u = {
+                .cursor_enter_event = {
+                    .entered = entered
+                }
+            }
+        }
+    );
+}
+
+void Imgui_viewport::on_event(const Cursor_enter_event& cursor_enter_event)
+{
+    m_has_cursor = cursor_enter_event.entered != 0;
     ImGuiIO& io = m_imgui_context->IO;
     io.AddFocusEvent(m_has_cursor);
 }
@@ -241,14 +316,24 @@ void Imgui_viewport::on_mouse_move(
     const float y
 )
 {
-    ImGuiIO& io = m_imgui_context->IO;
-    io.AddMousePosEvent(x, y);
+    std::lock_guard<std::mutex> lock{m_event_mutex};
+    m_events.push_back(
+        Imgui_event{
+            .type = Imgui_event_type::mouse_move_event,
+            .u = {
+                .mouse_move_event = {
+                    .x = x,
+                    .y = y
+                }
+            }
+        }
+    );
 }
 
-auto Imgui_viewport::get_mouse_position() const -> glm::vec2
+void Imgui_viewport::on_event(const Mouse_move_event& mouse_move_event)
 {
     ImGuiIO& io = m_imgui_context->IO;
-    return glm::vec2{io.MousePos.x, io.MousePos.y};
+    io.AddMousePosEvent(mouse_move_event.x, mouse_move_event.y);
 }
 
 void Imgui_viewport::on_mouse_button(
@@ -264,8 +349,24 @@ void Imgui_viewport::on_mouse_button(
         pressed ? "pressed" : "released"
     );
 
+    std::lock_guard<std::mutex> lock{m_event_mutex};
+    m_events.push_back(
+        Imgui_event{
+            .type = Imgui_event_type::mouse_button_event,
+            .u = {
+                .mouse_button_event = {
+                    .button  = button,
+                    .pressed = pressed
+                }
+            }
+        }
+    );
+}
+
+void Imgui_viewport::on_event(const Mouse_button_event& mouse_button_event)
+{
     ImGuiIO& io = m_imgui_context->IO;
-    io.AddMouseButtonEvent(button, pressed);
+    io.AddMouseButtonEvent(mouse_button_event.button, mouse_button_event.pressed);
 }
 
 void Imgui_viewport::on_mouse_wheel(
@@ -281,8 +382,24 @@ void Imgui_viewport::on_mouse_wheel(
         y
     );
 
+    std::lock_guard<std::mutex> lock{m_event_mutex};
+    m_events.push_back(
+        Imgui_event{
+            .type = Imgui_event_type::mouse_wheel_event,
+            .u = {
+                .mouse_wheel_event = {
+                    .x = x,
+                    .y = y
+                }
+            }
+        }
+    );
+}
+
+void Imgui_viewport::on_event(const Mouse_wheel_event& mouse_wheel_event)
+{
     ImGuiIO& io = m_imgui_context->IO;
-    io.AddMouseWheelEvent(x, y);
+    io.AddMouseWheelEvent(mouse_wheel_event.x, mouse_wheel_event.y);
 }
 
 void Imgui_viewport::on_key(
@@ -300,12 +417,29 @@ void Imgui_viewport::on_key(
         pressed
     );
 
+    std::lock_guard<std::mutex> lock{m_event_mutex};
+    m_events.push_back(
+        Imgui_event{
+            .type = Imgui_event_type::key_event,
+            .u = {
+                .key_event = {
+                    .keycode       = keycode,
+                    .modifier_mask = modifier_mask,
+                    .pressed       = pressed
+                }
+            }
+        }
+    );
+}
+
+void Imgui_viewport::on_event(const Key_event& event)
+{
     using erhe::toolkit::Keycode;
 
     ImGuiIO& io = m_imgui_context->IO;
 
-    update_key_modifiers(io, modifier_mask);
-    io.AddKeyEvent(from_erhe(keycode), pressed);
+    update_key_modifiers(io, event.modifier_mask);
+    io.AddKeyEvent(from_erhe(event.keycode), event.pressed);
 }
 
 void Imgui_viewport::on_char(
@@ -319,42 +453,44 @@ void Imgui_viewport::on_char(
         codepoint
     );
 
-    ImGuiIO& io = m_imgui_context->IO;
-    io.AddInputCharacter(codepoint);
+    std::lock_guard<std::mutex> lock{m_event_mutex};
+    m_events.push_back(
+        Imgui_event{
+            .type = Imgui_event_type::char_event,
+            .u = {
+                .char_event = {
+                    .codepoint = codepoint
+                }
+            }
+        }
+    );
 }
 
-void Imgui_viewport::menu()
+void Imgui_viewport::on_event(const Char_event& char_event)
 {
-    ERHE_VERIFY(g_imgui_windows != nullptr);
-
-    if (ImGui::BeginMainMenuBar())
-    {
-        g_imgui_windows->window_menu(this);
-        ImGui::EndMainMenuBar();
-    }
-    auto& imgui_builtin_windows = g_imgui_windows->get_imgui_builtin_windows();
-    if (imgui_builtin_windows.demo)
-    {
-        ImGui::ShowDemoWindow(&imgui_builtin_windows.demo);
-    }
-
-    if (imgui_builtin_windows.style_editor)
-    {
-        ImGui::Begin("Dear ImGui Style Editor", &imgui_builtin_windows.style_editor);
-        ImGui::ShowStyleEditor();
-        ImGui::End();
-    }
-
-    if (imgui_builtin_windows.metrics)
-    {
-        ImGui::ShowMetricsWindow(&imgui_builtin_windows.metrics);
-    }
-
-    if (imgui_builtin_windows.stack_tool)
-    {
-        ImGui::ShowStackToolWindow(&imgui_builtin_windows.stack_tool);
-    }
+    ImGuiIO& io = m_imgui_context->IO;
+    io.AddInputCharacter(char_event.codepoint);
 }
+
+void Imgui_viewport::flush_queud_events()
+{
+    std::lock_guard<std::mutex> lock{m_event_mutex};
+    for (const auto& event : m_events) {
+        switch (event.type) {
+            case Imgui_event_type::key_event         : on_event(event.u.key_event); break;
+            case Imgui_event_type::char_event        : on_event(event.u.char_event); break;
+            case Imgui_event_type::focus_event       : on_event(event.u.focus_event); break;
+            case Imgui_event_type::cursor_enter_event: on_event(event.u.cursor_enter_event); break;
+            case Imgui_event_type::mouse_move_event  : on_event(event.u.mouse_move_event); break;
+            case Imgui_event_type::mouse_button_event: on_event(event.u.mouse_button_event); break;
+            case Imgui_event_type::mouse_wheel_event : on_event(event.u.mouse_wheel_event); break;
+            default: break;
+        }
+    }
+    m_events.clear();
+}
+
+#pragma endregion Events
 
 #else
 auto Imgui_viewport::want_capture_mouse() const -> bool

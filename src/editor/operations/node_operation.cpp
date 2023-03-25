@@ -17,14 +17,10 @@ auto Node_operation::describe() const -> std::string
 {
     std::stringstream ss;
     bool first = true;
-    for (const auto& entry : m_entries)
-    {
-        if (first)
-        {
+    for (const auto& entry : m_entries) {
+        if (first) {
             first = false;
-        }
-        else
-        {
+        } else {
             ss << ", ";
         }
         ss << entry.node->get_name();
@@ -38,22 +34,20 @@ auto Node_operation::describe() const -> std::string
     return ss.str();
 }
 
-void Node_operation::execute(const Operation_context&)
+void Node_operation::execute()
 {
     log_operations->trace("Op Execute {}", describe());
 
-    for (auto& entry : m_entries)
-    {
+    for (auto& entry : m_entries) {
         entry.node->node_data = entry.after;
     }
 }
 
-void Node_operation::undo(const Operation_context&)
+void Node_operation::undo()
 {
     log_operations->trace("Op Undo {}", describe());
 
-    for (const auto& entry : m_entries)
-    {
+    for (const auto& entry : m_entries) {
         entry.node->node_data = entry.before;
     }
 }
@@ -87,7 +81,7 @@ Attach_operation::Attach_operation(
 {
 }
 
-void Attach_operation::execute(const Operation_context& context)
+void Attach_operation::execute()
 {
     log_operations->trace("Op Execute {}", describe());
 
@@ -96,26 +90,21 @@ void Attach_operation::execute(const Operation_context& context)
         (node != nullptr)
         ? std::static_pointer_cast<erhe::scene::Node>(node->shared_from_this())
         : std::shared_ptr<erhe::scene::Node>{};
-    if (m_host_node_before)
-    {
+    if (m_host_node_before) {
         m_host_node_before->detach(m_attachment.get());
     }
 
-    if (m_host_node_after)
-    {
+    if (m_host_node_after) {
         m_host_node_after->attach(m_attachment);
     }
 
-    if (context.components != nullptr)
+    if (g_selection_tool != nullptr)
     {
-        if (g_selection_tool != nullptr)
-        {
-            g_selection_tool->sanity_check();
-        }
+        g_selection_tool->sanity_check();
     }
 }
 
-void Attach_operation::undo(const Operation_context& context)
+void Attach_operation::undo()
 {
     log_operations->trace("Op Undo {}", describe());
 
@@ -124,22 +113,17 @@ void Attach_operation::undo(const Operation_context& context)
         (node != nullptr)
         ? std::static_pointer_cast<erhe::scene::Node>(node->shared_from_this())
         : std::shared_ptr<erhe::scene::Node>{};
-    if (m_host_node_after)
-    {
+    if (m_host_node_after) {
         m_host_node_after->detach(m_attachment.get());
     }
 
-    if (m_host_node_before)
-    {
+    if (m_host_node_before) {
         m_host_node_before->attach(m_attachment);
     }
 
-    if (context.components != nullptr)
+    if (g_selection_tool != nullptr)
     {
-        if (g_selection_tool != nullptr)
-        {
-            g_selection_tool->sanity_check();
-        }
+        g_selection_tool->sanity_check();
     }
 }
 
@@ -173,15 +157,14 @@ Node_attach_operation::Node_attach_operation(
     ERHE_VERIFY(!place_before_node || !place_after_node);
 }
 
-void Node_attach_operation::execute(const Operation_context& context)
+void Node_attach_operation::execute()
 {
     log_operations->trace("Op Execute {}", describe());
 
     ERHE_VERIFY(m_child_node->parent().lock() == m_parent_before);
 
     m_parent_before_index = m_child_node->get_index_in_parent();
-    if (m_parent_after)
-    {
+    if (m_parent_after) {
         m_parent_after_index = m_place_before_node
             ? m_place_before_node->get_index_in_parent()
             : m_place_after_node
@@ -189,42 +172,29 @@ void Node_attach_operation::execute(const Operation_context& context)
                 : m_parent_after->child_count();
 
         m_child_node->set_parent(m_parent_after, m_parent_after_index);
-    }
-    else
-    {
+    } else {
         m_child_node->set_parent({});
     }
 
-    if (context.components != nullptr)
-    {
-        if (g_selection_tool != nullptr)
-        {
-            g_selection_tool->sanity_check();
-        }
+    if (g_selection_tool != nullptr) {
+        g_selection_tool->sanity_check();
     }
 }
 
-void Node_attach_operation::undo(const Operation_context& context)
+void Node_attach_operation::undo()
 {
     log_operations->trace("Op Undo {}", describe());
 
     ERHE_VERIFY(m_child_node->parent().lock() == m_parent_after);
 
-    if (m_parent_before)
-    {
+    if (m_parent_before) {
         m_child_node->set_parent(m_parent_before, m_parent_before_index);
-    }
-    else if (m_parent_after)
-    {
+    } else if (m_parent_after) {
         m_child_node->set_parent({});
     }
 
-    if (context.components != nullptr)
-    {
-        if (g_selection_tool != nullptr)
-        {
-            g_selection_tool->sanity_check();
-        }
+    if (g_selection_tool != nullptr) {
+        g_selection_tool->sanity_check();
     }
 }
 
@@ -255,7 +225,7 @@ auto Node_reposition_in_parent_operation::describe() const -> std::string
     );
 }
 
-void Node_reposition_in_parent_operation::execute(const Operation_context& context)
+void Node_reposition_in_parent_operation::execute()
 {
     log_operations->trace("Op Execute {}", describe());
 
@@ -277,16 +247,12 @@ void Node_reposition_in_parent_operation::execute(const Operation_context& conte
 
     parent_children.insert(parent_children.begin() + after_index, m_child_node);
 
-    if (context.components != nullptr)
-    {
-        if (g_selection_tool != nullptr)
-        {
-            g_selection_tool->sanity_check();
-        }
+    if (g_selection_tool != nullptr) {
+        g_selection_tool->sanity_check();
     }
 }
 
-void Node_reposition_in_parent_operation::undo(const Operation_context& context)
+void Node_reposition_in_parent_operation::undo()
 {
     log_operations->trace("Op Undo {}", describe());
 
@@ -303,12 +269,8 @@ void Node_reposition_in_parent_operation::undo(const Operation_context& context)
     parent_children.erase(parent_children.begin() + after_index);
     parent_children.insert(parent_children.begin() + m_before_index, m_child_node);
 
-    if (context.components != nullptr)
-    {
-        if (g_selection_tool != nullptr)
-        {
-            g_selection_tool->sanity_check();
-        }
+    if (g_selection_tool != nullptr) {
+        g_selection_tool->sanity_check();
     }
 }
 

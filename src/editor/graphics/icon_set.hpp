@@ -72,6 +72,15 @@ class Icon_set
     : public erhe::components::Component
 {
 public:
+    class Config
+    {
+    public:
+        int small_icon_size {16};
+        int large_icon_size {32};
+        int hotbar_icon_size{128};
+    };
+    Config config;
+
     static constexpr std::string_view c_type_name{"Icon_set"};
     static constexpr uint32_t c_type_hash = compiletime_xxhash::xxh32(c_type_name.data(), c_type_name.size(), {});
 
@@ -94,13 +103,13 @@ public:
     [[nodiscard]] auto get_hotbar_rasterization() const -> const Icon_rasterization&;
 
 private:
-    Icon_rasterization m_small;
-    Icon_rasterization m_large;
-    Icon_rasterization m_hotbar;
-    int                m_row_count   {0};
-    int                m_column_count{0};
-    int                m_row         {0};
-    int                m_column      {0};
+    std::optional<Icon_rasterization> m_small;
+    std::optional<Icon_rasterization> m_large;
+    std::optional<Icon_rasterization> m_hotbar;
+    int                               m_row_count   {0};
+    int                               m_column_count{0};
+    int                               m_row         {0};
+    int                               m_column      {0};
 };
 
 extern Icon_set* g_icon_set;

@@ -26,8 +26,8 @@ class Font final
 public:
     Font(
         const std::filesystem::path& path,
-        const unsigned int           size,
-        const float                  outline_thickness = 0.0f
+        unsigned int                 size,
+        float                        outline_thickness = 0.0f
     );
 
     ~Font() noexcept;
@@ -47,6 +47,8 @@ public:
         const uint32_t      text_color,
         Rectangle&          out_bounds
     ) const -> size_t;
+
+    auto get_glyph_count(const std::string_view text) const -> size_t;
 
     auto measure(const std::string_view text) const -> Rectangle;
 

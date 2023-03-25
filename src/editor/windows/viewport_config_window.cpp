@@ -44,8 +44,22 @@ void Viewport_config_window::declare_required_components()
 void Viewport_config_window::initialize_component()
 {
     ERHE_VERIFY(g_viewport_config_window == nullptr);
-    erhe::application::g_imgui_windows->register_imgui_window(this);
-    const auto& config = erhe::application::g_configuration->viewport;
+
+    erhe::application::g_imgui_windows->register_imgui_window(this, "viewport_config");
+
+    auto ini = erhe::application::get_ini("erhe.ini", "viewport");
+    ini->get("polygon_fill",              config.polygon_fill);
+    ini->get("edge_lines",                config.edge_lines);
+    ini->get("edge_color",                config.edge_color);
+    ini->get("selection_polygon_fill",    config.selection_polygon_fill);
+    ini->get("selection_edge_lines",      config.selection_edge_lines);
+    ini->get("corner_points",             config.corner_points);
+    ini->get("polygon_centroids",         config.polygon_centroids);
+    ini->get("selection_bounding_box",    config.selection_bounding_box);
+    ini->get("selection_bounding_sphere", config.selection_bounding_sphere);
+    ini->get("selection_edge_color",      config.selection_edge_color);
+    ini->get("clear_color",               config.clear_color);
+
     data.render_style_not_selected.polygon_fill      = config.polygon_fill;
     data.render_style_not_selected.edge_lines        = config.edge_lines;
     data.render_style_not_selected.corner_points     = config.corner_points;
@@ -80,11 +94,9 @@ void Viewport_config_window::render_style_ui(Render_style& render_style)
         ImGuiTreeNodeFlags_SpanFullWidth
     };
 
-    if (ImGui::TreeNodeEx("Polygon Fill", flags))
-    {
+    if (ImGui::TreeNodeEx("Polygon Fill", flags)) {
         ImGui::Checkbox("Visible", &render_style.polygon_fill);
-        if (render_style.polygon_fill)
-        {
+        if (render_style.polygon_fill) {
             ImGui::Text       ("Polygon Offset");
             ImGui::Checkbox   ("Enable", &render_style.polygon_offset_enable);
             ImGui::SliderFloat("Factor", &render_style.polygon_offset_factor, -2.0f, 2.0f);
@@ -94,11 +106,9 @@ void Viewport_config_window::render_style_ui(Render_style& render_style)
         ImGui::TreePop();
     }
 
-    if (ImGui::TreeNodeEx("Edge Lines", flags))
-    {
+    if (ImGui::TreeNodeEx("Edge Lines", flags)) {
         ImGui::Checkbox("Visible", &render_style.edge_lines);
-        if (render_style.edge_lines)
-        {
+        if (render_style.edge_lines) {
             ImGui::SliderFloat("Width",          &render_style.line_width, 0.0f, 20.0f);
             ImGui::ColorEdit4 ("Constant Color", &render_style.line_color.x,     ImGuiColorEditFlags_Float);
             erhe::application::make_combo(
@@ -111,11 +121,9 @@ void Viewport_config_window::render_style_ui(Render_style& render_style)
         ImGui::TreePop();
     }
 
-    if (ImGui::TreeNodeEx("Polygon Centroids", flags))
-    {
+    if (ImGui::TreeNodeEx("Polygon Centroids", flags)) {
         ImGui::Checkbox("Visible", &render_style.polygon_centroids);
-        if (render_style.polygon_centroids)
-        {
+        if (render_style.polygon_centroids) {
             ImGui::ColorEdit4("Constant Color", &render_style.centroid_color.x, ImGuiColorEditFlags_Float);
             erhe::application::make_combo(
                 "Color Source",
@@ -127,8 +135,7 @@ void Viewport_config_window::render_style_ui(Render_style& render_style)
         ImGui::TreePop();
     }
 
-    if (ImGui::TreeNodeEx("Corner Points", flags))
-    {
+    if (ImGui::TreeNodeEx("Corner Points", flags)) {
         ImGui::Checkbox  ("Visible",        &render_style.corner_points);
         ImGui::ColorEdit4("Constant Color", &render_style.corner_color.x,   ImGuiColorEditFlags_Float);
         erhe::application::make_combo(
@@ -140,8 +147,7 @@ void Viewport_config_window::render_style_ui(Render_style& render_style)
         ImGui::TreePop();
     }
 
-    if (render_style.polygon_centroids || render_style.corner_points)
-    {
+    if (render_style.polygon_centroids || render_style.corner_points) {
         ImGui::SliderFloat("Point Size", &render_style.point_size, 0.0f, 20.0f);
     }
 }
@@ -159,25 +165,21 @@ void Viewport_config_window::imgui()
         ImGuiTreeNodeFlags_SpanFullWidth
     };
 
-    if (edit_data != nullptr)
-    {
+    if (edit_data != nullptr) {
         ImGui::ColorEdit4("Clear Color", &edit_data->clear_color.x, ImGuiColorEditFlags_Float);
         ImGui::Checkbox  ("Post Processing", &edit_data->post_processing_enable);
 
-        if (ImGui::TreeNodeEx("Default Style", flags))
-        {
+        if (ImGui::TreeNodeEx("Default Style", flags)) {
             render_style_ui(edit_data->render_style_not_selected);
             ImGui::TreePop();
         }
 
-        if (ImGui::TreeNodeEx("Selection", flags))
-        {
+        if (ImGui::TreeNodeEx("Selection", flags)) {
             render_style_ui(edit_data->render_style_selected);
             ImGui::TreePop();
         }
 
-        if (ImGui::TreeNodeEx("Debug Visualizations", flags))
-        {
+        if (ImGui::TreeNodeEx("Debug Visualizations", flags)) {
             erhe::application::make_combo("Light",  edit_data->debug_visualizations.light,  c_visualization_mode_strings, IM_ARRAYSIZE(c_visualization_mode_strings));
             erhe::application::make_combo("Camera", edit_data->debug_visualizations.camera, c_visualization_mode_strings, IM_ARRAYSIZE(c_visualization_mode_strings));
             ImGui::TreePop();
@@ -188,10 +190,8 @@ void Viewport_config_window::imgui()
 
     ImGui::SliderFloat("LoD Bias", &rendertarget_mesh_lod_bias, -8.0f, 8.0f);
 
-    if (g_hotbar != nullptr)
-    {
-        if (ImGui::TreeNodeEx("Hotbar", flags))
-        {
+    if (g_hotbar != nullptr) {
+        if (ImGui::TreeNodeEx("Hotbar", flags)) {
             auto& color_inactive = g_hotbar->get_color(0);
             auto& color_hover    = g_hotbar->get_color(1);
             auto& color_active   = g_hotbar->get_color(2);
@@ -200,15 +200,13 @@ void Viewport_config_window::imgui()
             ImGui::ColorEdit4("Active",   &color_active.x,   ImGuiColorEditFlags_Float);
 
             auto position = g_hotbar->get_position();
-            if (ImGui::DragFloat3("Position", &position.x, 0.1f))
-            {
+            if (ImGui::DragFloat3("Position", &position.x, 0.1f)) {
                 g_hotbar->set_position(position);
             }
             ImGui::TreePop();
 
             bool locked = g_hotbar->get_locked();
-            if (ImGui::Checkbox("Locked", &locked))
-            {
+            if (ImGui::Checkbox("Locked", &locked)) {
                 g_hotbar->set_locked(locked);
             }
         }

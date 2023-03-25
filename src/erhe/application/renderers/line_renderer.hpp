@@ -1,10 +1,10 @@
 #pragma once
 
-#include "erhe/application/imgui/imgui_window.hpp"
 #include "erhe/components/components.hpp"
 #include "erhe/graphics/buffer.hpp"
 #include "erhe/graphics/fragment_outputs.hpp"
 #include "erhe/graphics/pipeline.hpp"
+#include "erhe/graphics/instance.hpp"
 #include "erhe/graphics/shader_resource.hpp"
 #include "erhe/graphics/state/color_blend_state.hpp"
 #include "erhe/graphics/state/depth_stencil_state.hpp"
@@ -239,24 +239,42 @@ private:
     class Buffer_writer
     {
     public:
-        Buffer_range range;
-        std::size_t  write_offset{0};
+        erhe::graphics::Buffer* m_buffer{nullptr};
+        Buffer_range            range;
+        std::size_t             map_offset  {0};
+        std::size_t             write_offset{0};
 
-        void begin()
+        void begin(erhe::graphics::Buffer* buffer)
         {
-            range.first_byte_offset = write_offset;
+            ERHE_VERIFY(m_buffer == nullptr);
+            m_buffer = buffer;
+            if (!erhe::graphics::Instance::info.use_persistent_buffers) {
+                map_offset = write_offset;
+                write_offset = 0;
+                m_buffer->begin_write(write_offset, 0); // TODO
+            }
+            range.first_byte_offset = map_offset; //// write_offset;
         }
 
         void end()
         {
-            range.byte_count = write_offset - range.first_byte_offset;
+            ERHE_VERIFY(m_buffer != nullptr);
+            range.byte_count = write_offset; //// - range.first_byte_offset;
+            if (!erhe::graphics::Instance::info.use_persistent_buffers) {
+                m_buffer->end_write(map_offset, write_offset);
+                write_offset += map_offset;
+                map_offset = 0;
+            }
+            m_buffer = nullptr;
         }
 
         void reset()
         {
+            ERHE_VERIFY(m_buffer == nullptr);
             range.first_byte_offset = 0;
             range.byte_count = 0;
             write_offset = 0;
+            map_offset = 0;
         }
     };
 
@@ -270,22 +288,20 @@ private:
         std::size_t&            word_offset
     );
 
-    std::deque<Frame_resources>        m_frame_resources;
-    std::string                        m_name;
-    Line_renderer_pipeline*            m_pipeline                   {nullptr};
-    std::size_t                        m_line_count                 {0};
-    Buffer_writer                      m_view_writer;
-    Buffer_writer                      m_vertex_writer;
-    std::size_t                        m_current_frame_resource_slot{0};
-    glm::vec4                          m_line_color                 {1.0f, 1.0f, 1.0f, 1.0f};
-    float                              m_line_thickness             {1.0f};
-    bool                               m_inside_begin_end           {false};
-    std::vector<std::function<void()>> m_imgui;
+    std::deque<Frame_resources> m_frame_resources;
+    std::string                 m_name;
+    Line_renderer_pipeline*     m_pipeline                   {nullptr};
+    std::size_t                 m_line_count                 {0};
+    Buffer_writer               m_view_writer;
+    Buffer_writer               m_vertex_writer;
+    std::size_t                 m_current_frame_resource_slot{0};
+    glm::vec4                   m_line_color                 {1.0f, 1.0f, 1.0f, 1.0f};
+    float                       m_line_thickness             {1.0f};
+    bool                        m_inside_begin_end           {false};
 };
 
 class Line_renderer_set
     : public erhe::components::Component
-    , public Imgui_window
 {
 public:
     static constexpr std::string_view c_type_name{"Line_renderer_set"};
@@ -301,9 +317,6 @@ public:
     void initialize_component       () override;
     void deinitialize_component     () override;
 
-    // Implements Imgui_window
-    void imgui() override;
-
     // Public API
     void begin     ();
     void end       ();
@@ -314,7 +327,7 @@ public:
     );
 
 private:
-    Line_renderer_pipeline m_pipeline;
+    std::optional<Line_renderer_pipeline> m_pipeline;
 
 public:
     static constexpr unsigned int s_max_stencil_reference = 4;

@@ -44,8 +44,7 @@ void Fly_camera_space_mouse_listener::set_active(const bool value)
 
 void Fly_camera_space_mouse_listener::on_translation(const int tx, const int ty, const int tz)
 {
-    if (g_fly_camera_tool == nullptr)
-    {
+    if (g_fly_camera_tool == nullptr) {
         return;
     }
     g_fly_camera_tool->translation(tx, -tz, ty);
@@ -53,8 +52,7 @@ void Fly_camera_space_mouse_listener::on_translation(const int tx, const int ty,
 
 void Fly_camera_space_mouse_listener::on_rotation(const int rx, const int ry, const int rz)
 {
-    if (g_fly_camera_tool == nullptr)
-    {
+    if (g_fly_camera_tool == nullptr) {
         return;
     }
     g_fly_camera_tool->rotation(rx, -rz, ry);
@@ -67,8 +65,7 @@ void Fly_camera_space_mouse_listener::on_button(const int)
 
 void Fly_camera_turn_command::try_ready()
 {
-    if (g_fly_camera_tool == nullptr)
-    {
+    if (g_fly_camera_tool == nullptr) {
         return;
     }
 
@@ -81,27 +78,23 @@ void Fly_camera_turn_command::try_ready()
 auto Fly_camera_tool::try_ready() -> bool
 {
     const Scene_view* scene_view = get_hover_scene_view();
-    if (scene_view == nullptr)
-    {
+    if (scene_view == nullptr) {
         return false;
     }
 
     if (
         scene_view->get_hover(Hover_entry::tool_slot        ).valid ||
         scene_view->get_hover(Hover_entry::rendertarget_slot).valid
-    )
-    {
+    ) {
         return false;
     }
 
     const Viewport_window* viewport_window = scene_view->as_viewport_window();
-    if (viewport_window != nullptr)
-    {
+    if (viewport_window != nullptr) {
         // Exclude safe border near viewport edges from mouse interaction
         // to filter out viewport window resizing for example.
         const auto position_opt = viewport_window->get_position_in_viewport();
-        if (!position_opt.has_value())
-        {
+        if (!position_opt.has_value()) {
             return false;
         }
         constexpr float border   = 32.0f;
@@ -112,8 +105,7 @@ auto Fly_camera_tool::try_ready() -> bool
             (position.y <  border) ||
             (position.x >= viewport.width  - border) ||
             (position.y >= viewport.height - border)
-        )
-        {
+        ) {
             return false;
         }
     }
@@ -126,31 +118,26 @@ Fly_camera_turn_command::Fly_camera_turn_command()
 {
 }
 
-auto Fly_camera_turn_command::try_call(
+auto Fly_camera_turn_command::try_call_with_input(
     erhe::application::Input_arguments& input
 ) -> bool
 {
-    if (g_fly_camera_tool == nullptr)
-    {
+    if (g_fly_camera_tool == nullptr) {
         return false;
     }
 
     const auto value = input.vector2.relative_value;
-    if (get_command_state() == erhe::application::State::Ready)
-    {
-        if (g_fly_camera_tool->get_hover_scene_view() == nullptr)
-        {
+    if (get_command_state() == erhe::application::State::Ready) {
+        if (g_fly_camera_tool->get_hover_scene_view() == nullptr) {
             set_inactive();
             return false;
         }
-        if ((value.x != 0.0f) || (value.y != 0.0f))
-        {
+        if ((value.x != 0.0f) || (value.y != 0.0f)) {
             set_active();
         }
     }
 
-    if (get_command_state() != erhe::application::State::Active)
-    {
+    if (get_command_state() != erhe::application::State::Active) {
         return false;
     }
 
@@ -172,8 +159,7 @@ Fly_camera_move_command::Fly_camera_move_command(
 
 auto Fly_camera_move_command::try_call() -> bool
 {
-    if (g_fly_camera_tool == nullptr)
-    {
+    if (g_fly_camera_tool == nullptr) {
         return false;
     }
 
@@ -249,11 +235,18 @@ void Fly_camera_tool::initialize_component()
     m_space_mouse_listener.set_active(true);
 #endif
 
+    auto ini = erhe::application::get_ini("erhe.ini", "camera_controls");
+    ini->get("invert_x",           config.invert_x);
+    ini->get("invert_y",           config.invert_y);
+    ini->get("velocity_damp",      config.velocity_damp);
+    ini->get("velocity_max_delta", config.velocity_max_delta);
+    ini->get("sensitivity",        config.sensitivity);
+
     set_base_priority(c_priority);
     set_description  (c_title);
     set_flags        (Tool_flags::background);
     g_tools->register_tool(this);
-    erhe::application::g_imgui_windows->register_imgui_window(this);
+    erhe::application::g_imgui_windows->register_imgui_window(this, "fly_camera");
 
     auto& commands = *erhe::application::g_commands;
 
@@ -287,7 +280,6 @@ void Fly_camera_tool::initialize_component()
 
     m_camera_controller = std::make_shared<Frame_controller>();
 
-    const auto& config = erhe::application::g_configuration->camera_controls;
     m_camera_controller->get_controller(Control::translate_x).set_damp_and_max_delta(config.velocity_damp, config.velocity_max_delta);
     m_camera_controller->get_controller(Control::translate_y).set_damp_and_max_delta(config.velocity_damp, config.velocity_max_delta);
     m_camera_controller->get_controller(Control::translate_z).set_damp_and_max_delta(config.velocity_damp, config.velocity_max_delta);
@@ -321,8 +313,7 @@ void Fly_camera_tool::initialize_component()
 
 void Fly_camera_tool::update_camera()
 {
-    if (!m_use_viewport_camera)
-    {
+    if (!m_use_viewport_camera) {
         return;
     }
 
@@ -336,8 +327,7 @@ void Fly_camera_tool::update_camera()
 
     // TODO This is messy
 
-    if (m_camera_controller->get_node() != camera_node)
-    {
+    if (m_camera_controller->get_node() != camera_node) {
         set_camera(camera.get());
     }
 }
@@ -347,29 +337,19 @@ void Fly_camera_tool::set_camera(erhe::scene::Camera* const camera)
     // attach() below requires world from node matrix, which
     // might not be valid due to transform hierarchy.
 
-    if (camera != nullptr)
-    {
+    if (camera != nullptr) {
         auto* scene_root = reinterpret_cast<Scene_root*>(camera->get_node()->node_data.host);
-        if (scene_root != nullptr)
-        {
+        if (scene_root != nullptr) {
             scene_root->scene().update_node_transforms();
-        }
-        else
-        {
+        } else {
             log_fly_camera->warn("camera node does not have scene root");
         }
     }
 
-    auto* old_host = m_camera_controller->get_node();
-    if (old_host != nullptr)
-    {
-        m_camera_controller->reset();
-        old_host->detach(m_camera_controller.get());
-    }
-    if (camera != nullptr)
-    {
-        camera->get_node()->attach(m_camera_controller);
-    }
+    erhe::scene::Node* node = (camera != nullptr)
+        ? camera->get_node()
+        : nullptr;
+    m_camera_controller->set_node(node);
 }
 
 auto Fly_camera_tool::get_camera() const -> erhe::scene::Camera*
@@ -385,8 +365,7 @@ void Fly_camera_tool::translation(
     const int tz
 )
 {
-    if (!m_camera_controller)
-    {
+    if (!m_camera_controller) {
         return;
     }
     const std::lock_guard<std::mutex> lock_fly_camera{m_mutex};
@@ -405,8 +384,7 @@ void Fly_camera_tool::rotation(
     const int rz
 )
 {
-    if (!m_camera_controller)
-    {
+    if (!m_camera_controller) {
         return;
     }
 
@@ -429,8 +407,7 @@ auto Fly_camera_tool::try_move(
     if (
         (g_viewport_windows->hover_window() == nullptr) &&
         active
-    )
-    {
+    ) {
         log_fly_camera->warn("rejected press because no viewport window");
 
         return false;
@@ -447,19 +424,16 @@ auto Fly_camera_tool::turn_relative(const float dx, const float dy) -> bool
     const std::lock_guard<std::mutex> lock_fly_camera{m_mutex};
 
     const auto viewport_window = g_viewport_windows->hover_window();
-    if (!viewport_window)
-    {
+    if (!viewport_window) {
         return false;
     }
 
-    if (dx != 0.0f)
-    {
+    if (dx != 0.0f) {
         const float value = m_sensitivity * dx * m_rotate_scale_x;
         m_camera_controller->rotate_y.adjust(value);
     }
 
-    if (dy != 0.0f)
-    {
+    if (dy != 0.0f) {
         const float value = m_sensitivity * dy * m_rotate_scale_y;
         m_camera_controller->rotate_x.adjust(value);
     }
@@ -503,9 +477,13 @@ void Fly_camera_tool::imgui()
     float speed = m_camera_controller->translate_z.max_delta();
 
     auto* camera = get_camera();
-    const auto& scene_root = g_editor_scenes->get_current_scene_root();
-    if (!scene_root)
-    {
+    auto* hover_scene_view = Tool::get_hover_scene_view();
+    if (hover_scene_view == nullptr) {
+        return;
+    }
+
+    const auto& scene_root = hover_scene_view->get_scene_root();
+    if (!scene_root) {
         return;
     }
 
@@ -515,8 +493,7 @@ void Fly_camera_tool::imgui()
             camera
         ) &&
         !m_use_viewport_camera
-    )
-    {
+    ) {
         set_camera(camera);
     }
     ImGui::Checkbox   ("Use Viewport Camera", &m_use_viewport_camera);

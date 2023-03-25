@@ -12,7 +12,7 @@
 
 namespace erhe::application {
 
-Command_host::~Command_host() = default;
+Command_host::~Command_host() noexcept = default;
 
 void Command_host::set_description(const std::string_view description)
 {
@@ -69,7 +69,7 @@ auto Command::try_call() -> bool
     return false;
 }
 
-auto Command::try_call(Input_arguments& input) -> bool
+auto Command::try_call_with_input(Input_arguments& input) -> bool
 {
     static_cast<void>(input);
     return try_call();
@@ -101,14 +101,10 @@ auto Command::get_target_command() -> Command&
 
 void Command::set_inactive()
 {
-    if (m_state == State::Inactive)
-    {
+    if (m_state == State::Inactive) {
         return;
     }
-    log_command_state_transition->trace(
-        "{} -> inactive",
-        get_name()
-    );
+    log_command_state_transition->trace("{} -> inactive", get_name());
     on_inactive();
     m_state = State::Inactive;
     g_commands->command_inactivated(this);
@@ -116,14 +112,12 @@ void Command::set_inactive()
 
 void Command::disable()
 {
-    if (m_state == State::Disabled)
-    {
+    if (m_state == State::Disabled) {
         return;
     }
 
     log_command_state_transition->trace("{} -> disabled", get_name());
-    if (m_state == State::Active)
-    {
+    if (m_state == State::Active) {
         set_inactive();
     }
     m_state = State::Disabled;
@@ -131,8 +125,7 @@ void Command::disable()
 
 void Command::enable()
 {
-    if (m_state != State::Disabled)
-    {
+    if (m_state != State::Disabled) {
         return;
     }
 
@@ -153,8 +146,7 @@ void Command::set_ready()
 
 void Command::set_active()
 {
-    if (m_state == State::Active)
-    {
+    if (m_state == State::Active) {
         return;
     }
     log_command_state_transition->trace("{} -> active", get_name());
@@ -173,8 +165,7 @@ void Command::set_host(Command_host* host)
 
 auto Command::get_base_priority() const -> int
 {
-    switch (m_state)
-    {
+    switch (m_state) {
         //using enum State;
         case State::Active:   return 4;
         case State::Ready:    return 3;
@@ -238,16 +229,13 @@ Drag_enable_command::Drag_enable_command(Command& update_command)
     set_description(Command::get_name());
 }
 
-auto Drag_enable_command::try_call(Input_arguments& input) -> bool
+auto Drag_enable_command::try_call_with_input(Input_arguments& input) -> bool
 {
     const bool enable = input.button_pressed;
     this->Command_host::set_enabled(enable);
-    if (enable) // TODO This assymetry does not look great
-    {
+    if (enable) { // TODO This assymetry does not look great
         m_update_command.try_ready();
-    }
-    else
-    {
+    } else {
         m_update_command.get_target_command().set_inactive();
     }
     set_inactive(); // TODO Is this needed?
@@ -277,27 +265,23 @@ Drag_enable_float_command::Drag_enable_float_command(
     set_description(Command::get_name());
 }
 
-auto Drag_enable_float_command::try_call(Input_arguments& input) -> bool
+auto Drag_enable_float_command::try_call_with_input(Input_arguments& input) -> bool
 {
     static_cast<void>(input);
 
     const bool enable  = !Command_host::is_enabled() && (input.float_value >= m_min_to_enable);
     const bool disable =  Command_host::is_enabled() && (input.float_value <= m_max_to_disable);
 
-    if (!enable && !disable)
-    {
+    if (!enable && !disable) {
         return true; // consumed but didn't make a difference (yet)
     }
 
     ERHE_VERIFY(enable != disable);
 
     this->Command_host::set_enabled(enable);
-    if (enable) // TODO This assymetry does not look great
-    {
+    if (enable) { // TODO This assymetry does not look great
         m_update_command.try_ready();
-    }
-    else
-    {
+    } else {
         m_update_command.get_target_command().set_inactive();
     }
     set_inactive(); // TODO Is this needed?
@@ -339,8 +323,7 @@ Drag_float_command::Drag_float_command(Command& target_command)
 
 auto Drag_float_command::try_call() -> bool
 {
-    if (!is_enabled())
-    {
+    if (!is_enabled()) {
         return false;
     }
     return m_target_command.try_call();
@@ -358,20 +341,18 @@ Drag_vector2f_command::Drag_vector2f_command(Command& target_command)
 
 auto Drag_vector2f_command::try_call() -> bool
 {
-    if (!is_enabled())
-    {
+    if (!is_enabled()) {
         return false;
     }
     return m_target_command.try_call();
 }
 
-auto Drag_vector2f_command::try_call(Input_arguments& input) -> bool
+auto Drag_vector2f_command::try_call_with_input(Input_arguments& input) -> bool
 {
-    if (!is_enabled())
-    {
+    if (!is_enabled()) {
         return false;
     }
-    return m_target_command.try_call(input);
+    return m_target_command.try_call_with_input(input);
 }
 
 //
@@ -387,8 +368,7 @@ Drag_pose_command::Drag_pose_command(Command& target_command
 
 auto Drag_pose_command::try_call() -> bool
 {
-    if (!is_enabled())
-    {
+    if (!is_enabled()) {
         return false;
     }
     return m_target_command.try_call();
@@ -420,7 +400,7 @@ auto Xr_float_click_command::try_call() -> bool
     Input_arguments input{
         .float_value = m_xr_action_for_value->state.currentState
     };
-    return m_target_command.try_call(input);
+    return m_target_command.try_call_with_input(input);
 }
 
 //
@@ -454,7 +434,7 @@ auto Xr_vector2f_click_command::try_call() -> bool
             }
         }
     };
-    return m_target_command.try_call(input);
+    return m_target_command.try_call_with_input(input);
 }
 
 //
@@ -480,14 +460,13 @@ void Xr_pose_click_command::try_ready()
 
 auto Xr_pose_click_command::try_call() -> bool
 {
-    Input_arguments input
-    {
+    Input_arguments input{
         .pose = {
             .orientation = m_xr_action_for_value->orientation,
             .position    = m_xr_action_for_value->position
         }
     };
-    return m_target_command.try_call(input);
+    return m_target_command.try_call_with_input(input);
 }
 #endif
 

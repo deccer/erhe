@@ -54,6 +54,19 @@ class Headset_view
     , public std::enable_shared_from_this<Headset_view>
 {
 public:
+    class Config
+    {
+    public:
+        bool openxr           {false};
+        bool quad_view        {false};
+        bool debug            {false};
+        bool depth            {false};
+        bool visibility_mask  {false};
+        bool hand_tracking    {false};
+        bool composition_alpha{false};
+    };
+    Config config;
+
     static constexpr std::string_view c_name       {"Headset_view"};
     static constexpr std::string_view c_description{"Headset View"};
     static constexpr uint32_t c_type_hash = compiletime_xxhash::xxh32(c_name.data(), c_name.size(), {});
@@ -67,6 +80,7 @@ public:
     void declare_required_components() override;
     void initialize_component       () override;
     void deinitialize_component     () override;
+    void post_initialize            () override;
 
     // Implements Imgui_window
     void imgui() override;

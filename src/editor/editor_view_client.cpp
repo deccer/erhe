@@ -7,6 +7,7 @@
 #include "scene/viewport_window.hpp"
 #include "scene/viewport_windows.hpp"
 #include "tools/tools.hpp"
+#include "windows/physics_window.hpp"
 
 #include "erhe/application/commands/commands.hpp"
 #include "erhe/application/configuration.hpp"
@@ -56,8 +57,7 @@ void Editor_view_client::update_fixed_step(const erhe::components::Time_context&
 {
     const auto& test_scene_root = g_scene_builder->get_scene_root();
 
-    if (erhe::application::g_configuration->physics.static_enable)
-    {
+    if (g_physics_window->config.static_enable) {
         test_scene_root->physics_world().update_fixed_step(time_context.dt);
     }
 }
@@ -72,11 +72,13 @@ void Editor_view_client::update()
 
     erhe::application::g_time->update_once_per_frame();
 
-    g_editor_rendering->begin_frame ();
+    g_editor_rendering->begin_frame();
+    g_editor_scenes->update_node_transforms();
+    g_editor_scenes->update_network();
     erhe::application::g_imgui_windows ->imgui_windows();
     erhe::application::g_rendergraph   ->execute      ();
     erhe::application::g_imgui_renderer->next_frame   ();
-    g_editor_rendering->end_frame   ();
+    g_editor_rendering->end_frame();
     erhe::application::g_commands->on_update();
  }
 

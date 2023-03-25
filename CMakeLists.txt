@@ -25,6 +25,8 @@ set_property(GLOBAL PROPERTY USE_FOLDERS ON)
 #set(FETCHCONTENT_BASE_DIR "${PROJECT_SOURCE_DIR}/../cache")
 set(ERHE_INCLUDE_ROOT "${PROJECT_SOURCE_DIR}/src")
 
+set(FETCHCONTENT_UPDATES_DISCONNECTED ON CACHE BOOL "Do not update everytime I run cmake, please")
+
 # Split parts to cmake/
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_CURRENT_LIST_DIR}/cmake")
 
@@ -40,13 +42,13 @@ set_option(ERHE_FONT_RASTERIZATION_LIBRARY "Font rasterization library. Either f
 set_option(ERHE_GLTF_LIBRARY               "GLTF library. Either cgltf or none"                                   "cgltf"    "cgltf;none")
 set_option(ERHE_GUI_LIBRARY                "GUI library. Either imgui or none"                                    "imgui"    "imgui;none")
 set_option(ERHE_PHYSICS_LIBRARY            "Physics library to use with erhe. Either bullet, jolt or none"        "jolt"     "bullet;jolt;none")
-set_option(ERHE_PNG_LIBRARY                "PNG loading library. Either mango or none"                            "none"     "mango;none")
+set_option(ERHE_PNG_LIBRARY                "PNG loading library. Either mango or none"                            "mango"    "mango;none")
 set_option(ERHE_PROFILE_LIBRARY            "Profile library to use with erhe. Either superluminal, tracy or none" "none"     "superluminal;tracy;none")
-set_option(ERHE_RAYTRACE_LIBRARY           "Raytrace library to use with erhe. Either embree, bvh or none"        "none"     "embree;bvh;none")
-set_option(ERHE_SVG_LIBRARY                "SVG loading library. Either lunasvg or none"                          "none"     "lunasvg;none")
+set_option(ERHE_RAYTRACE_LIBRARY           "Raytrace library to use with erhe. Either embree, bvh or none"        "bvh"      "embree;bvh;none")
+set_option(ERHE_SVG_LIBRARY                "SVG loading library. Either lunasvg or none"                          "lunasvg"  "lunasvg;none")
 set_option(ERHE_TEXT_LAYOUT_LIBRARY        "Text layout library. Either freetype, harfbuzz or none"               "harfbuzz" "harfbuzz;freetype;none")
 set_option(ERHE_WINDOW_LIBRARY             "Window library to use with erhe. Either glfw or none"                 "glfw"     "glfw;none")
-set_option(ERHE_XR_LIBRARY                 "XR library to use with erhe. Either openxr, or none"                  "none"     "OpenXR;none")
+set_option(ERHE_XR_LIBRARY                 "XR library to use with erhe. Either openxr, or none"                  "none"     "openxr;none")
 
 # These are in cmake/ directory
 message("Compiler = ${CMAKE_CXX_COMPILER_ID}")
@@ -77,6 +79,8 @@ message("Fetching spdlog")
 FetchContent_MakeAvailable(spdlog)
 message("Fetching concurrentqueue")
 FetchContent_MakeAvailable(concurrentqueue)
+message("Fetching cpp-terminal")
+FetchContent_MakeAvailable(cpp-terminal)
 message("Fetching cxxopts")
 FetchContent_MakeAvailable(cxxopts)
 message("Fetching etl")

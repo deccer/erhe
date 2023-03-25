@@ -24,7 +24,7 @@ Material_interface::Material_interface(std::size_t max_material_count)
         .base_color   = material_struct.add_vec4 ("base_color"  )->offset_in_parent(),
         .emissive     = material_struct.add_vec4 ("emissive"    )->offset_in_parent(),
         .base_texture = material_struct.add_uvec2("base_texture")->offset_in_parent(),
-        .transparency = material_struct.add_float("transparency")->offset_in_parent(),
+        .opacity      = material_struct.add_float("opacity"     )->offset_in_parent(),
         .reserved     = material_struct.add_float("reserved"    )->offset_in_parent()
     },
     max_material_count{max_material_count}
@@ -60,17 +60,16 @@ auto Material_buffer::update(
         m_writer.write_offset
     );
 
-    auto&       buffer         = current_buffer();
-    const auto  entry_size     = m_material_interface->material_struct.size_bytes();
-    const auto& offsets        = m_material_interface->offsets;
-    const auto  gpu_data       = buffer.map();
-    m_writer.begin(buffer.target());
+    auto&             buffer         = current_buffer();
+    const auto        entry_size     = m_material_interface->material_struct.size_bytes();
+    const auto&       offsets        = m_material_interface->offsets;
+    const std::size_t max_byte_count = materials.size() * entry_size;
+    const auto        gpu_data       = m_writer.begin(&buffer, max_byte_count);
+    
     m_used_handles.clear();
     uint32_t material_index = 0;
-    for (const auto& material : materials)
-    {
-        if ((m_writer.write_offset + entry_size) > buffer.capacity_byte_count())
-        {
+    for (const auto& material : materials) {
+        if ((m_writer.write_offset + entry_size) > m_writer.write_end) {
             log_render->critical("material buffer capacity {} exceeded", buffer.capacity_byte_count());
             ERHE_FATAL("material buffer capacity exceeded");
             break;
@@ -89,26 +88,22 @@ auto Material_buffer::update(
                 )
             : 0;
 
-        if (handle != 0)
-        {
+        if (handle != 0) {
             m_used_handles.insert(handle);
         }
 
         material->material_buffer_index = material_index;
 
-        write(gpu_data, m_writer.write_offset + offsets.metallic    , as_span(material->metallic    ));
-        write(gpu_data, m_writer.write_offset + offsets.roughness   , as_span(material->roughness   ));
-        write(gpu_data, m_writer.write_offset + offsets.reflectance , as_span(material->reflectance ));
-        write(gpu_data, m_writer.write_offset + offsets.base_color  , as_span(material->base_color  ));
-        write(gpu_data, m_writer.write_offset + offsets.emissive    , as_span(material->emissive    ));
-        write(gpu_data, m_writer.write_offset + offsets.transparency, as_span(material->transparency));
+        write(gpu_data, m_writer.write_offset + offsets.metallic   , as_span(material->metallic   ));
+        write(gpu_data, m_writer.write_offset + offsets.roughness  , as_span(material->roughness  ));
+        write(gpu_data, m_writer.write_offset + offsets.reflectance, as_span(material->reflectance));
+        write(gpu_data, m_writer.write_offset + offsets.base_color , as_span(material->base_color ));
+        write(gpu_data, m_writer.write_offset + offsets.emissive   , as_span(material->emissive   ));
+        write(gpu_data, m_writer.write_offset + offsets.opacity    , as_span(material->opacity    ));
 
-        if (erhe::graphics::Instance::info.use_bindless_texture)
-        {
+        if (erhe::graphics::Instance::info.use_bindless_texture) {
             write(gpu_data, m_writer.write_offset + offsets.base_texture, as_span(handle));
-        }
-        else
-        {
+        } else {
             std::optional<std::size_t> opt_texture_unit = erhe::graphics::s_texture_unit_cache.allocate_texture_unit(handle);
             const uint64_t texture_unit = static_cast<uint64_t>(opt_texture_unit.has_value() ? opt_texture_unit.value() : 0);
             const uint64_t magic        = static_cast<uint64_t>(0x7fff'ffff);
@@ -117,7 +112,7 @@ auto Material_buffer::update(
         }
 
         m_writer.write_offset += entry_size;
-        ERHE_VERIFY(m_writer.write_offset <= buffer.capacity_byte_count());
+        ERHE_VERIFY(m_writer.write_offset <= m_writer.write_end);
         ++material_index;
     }
     m_writer.end();

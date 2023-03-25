@@ -12,6 +12,7 @@
 #include "scene/viewport_windows.hpp"
 #include "tools/selection_tool.hpp"
 
+#include "erhe/application/configuration.hpp"
 #include "erhe/application/imgui/imgui_helpers.hpp"
 #include "erhe/application/imgui/imgui_windows.hpp"
 #include "erhe/application/graphics/gl_context_provider.hpp"
@@ -55,23 +56,12 @@ void Physics_window::declare_required_components()
 void Physics_window::initialize_component()
 {
     ERHE_VERIFY(g_physics_window == nullptr);
-    //const Scoped_gl_context gl_context{Component::get<Gl_context_provider>()};
-    //
-    //auto rendertarget = get<Editor_imgui_windows>()->create_rendertarget(
-    //    "Physics",
-    //    1000,
-    //    1000,
-    //    1000.0
-    //);
-    //const auto placement = erhe::toolkit::create_look_at(
-    //    glm::vec3{-0.5f, 1.0f, 1.0f},
-    //    glm::vec3{0.0f, 1.0f, 0.0f},
-    //    glm::vec3{0.0f, 1.0f, 0.0f}
-    //);
-    //rendertarget->mesh_node()->set_parent_from_node(placement);
-    //
-    //rendertarget->register_imgui_window(this);
-    erhe::application::g_imgui_windows->register_imgui_window(this);
+
+    auto ini = erhe::application::get_ini("erhe.ini", "physics");
+    ini->get("static_enable",  config.static_enable);
+    ini->get("dynamic_enable", config.dynamic_enable);
+
+    erhe::application::g_imgui_windows->register_imgui_window(this, "physics");
     m_min_size[0] = 120.0f;
     m_min_size[1] = 120.0f;
     g_physics_window = this;
@@ -80,14 +70,12 @@ void Physics_window::initialize_component()
 void Physics_window::viewport_toolbar(bool& hovered)
 {
     const auto viewport_window = g_viewport_windows->last_window();
-    if (!viewport_window)
-    {
+    if (!viewport_window) {
         return;
     }
 
     const auto scene_root = viewport_window->get_scene_root();
-    if (!scene_root)
-    {
+    if (!scene_root) {
         return;
     }
 
@@ -101,8 +89,7 @@ void Physics_window::viewport_toolbar(bool& hovered)
             ? erhe::application::Item_mode::active
             : erhe::application::Item_mode::normal
     );
-    if (ImGui::IsItemHovered())
-    {
+    if (ImGui::IsItemHovered()) {
         hovered = true;
         ImGui::SetTooltip(
             physics_enabled
@@ -111,14 +98,10 @@ void Physics_window::viewport_toolbar(bool& hovered)
         );
     };
 
-    if (pressed)
-    {
-        if (physics_enabled)
-        {
+    if (pressed) {
+        if (physics_enabled) {
             physics_world.disable_physics_updates();
-        }
-        else
-        {
+        } else {
             physics_world.enable_physics_updates();
         }
     }
@@ -129,20 +112,17 @@ void Physics_window::imgui()
 #if defined(ERHE_GUI_LIBRARY_IMGUI)
     ERHE_PROFILE_FUNCTION
 
-    if (g_selection_tool == nullptr)
-    {
+    if (g_selection_tool == nullptr) {
         return;
     }
 
     const auto viewport_window = g_viewport_windows->last_window();
-    if (!viewport_window)
-    {
+    if (!viewport_window) {
         return;
     }
 
     const auto scene_root = viewport_window->get_scene_root();
-    if (!scene_root)
-    {
+    if (!scene_root) {
         return;
     }
 
@@ -151,25 +131,18 @@ void Physics_window::imgui()
     bool       updated_physics_enabled = physics_enabled;
     ImGui::Text("Scene: %s", scene_root->get_name().c_str());
     ImGui::Checkbox("Physics enabled", &updated_physics_enabled);
-    if (updated_physics_enabled != physics_enabled)
-    {
-        if (updated_physics_enabled)
-        {
+    if (updated_physics_enabled != physics_enabled) {
+        if (updated_physics_enabled) {
             physics_world.enable_physics_updates();
-        }
-        else
-        {
+        } else {
             physics_world.disable_physics_updates();
         }
     }
 
-    if (g_debug_draw != nullptr)
-    {
-        if (ImGui::CollapsingHeader("Visualizations"))
-        {
+    if (g_debug_draw != nullptr) {
+        if (ImGui::CollapsingHeader("Visualizations")) {
             ImGui::Checkbox("Enabled", &m_debug_draw.enable);
-            if (m_debug_draw.enable)
-            {
+            if (m_debug_draw.enable) {
                 ImGui::Checkbox("Wireframe",         &m_debug_draw.wireframe        );
                 ImGui::Checkbox("AABB",              &m_debug_draw.aabb             );
                 ImGui::Checkbox("Context Points",    &m_debug_draw.contact_points   );
@@ -197,8 +170,7 @@ void Physics_window::imgui()
         float floats[3] = { gravity.x, gravity.y, gravity.z };
         ImGui::InputFloat3("Gravity", floats);
         glm::vec3 updated_gravity{ floats[0], floats[1], floats[2] };
-        if (updated_gravity != gravity)
-        {
+        if (updated_gravity != gravity) {
             physics_world.set_gravity(updated_gravity);
         }
     }
@@ -216,8 +188,7 @@ void Physics_window::tool_render(
 {
     ERHE_PROFILE_FUNCTION
 
-    if (context.scene_view == nullptr)
-    {
+    if (context.scene_view == nullptr) {
         return;
     }
     const auto& scene_root   = context.scene_view->get_scene_root();
@@ -225,8 +196,7 @@ void Physics_window::tool_render(
         (g_debug_draw == nullptr) ||
         !m_debug_draw.enable ||
         !scene_root
-    )
-    {
+    ) {
         return;
     }
 

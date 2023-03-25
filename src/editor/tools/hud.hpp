@@ -46,6 +46,21 @@ class Hud
     , public Tool
 {
 public:
+    class Config
+    {
+    public:
+        bool  enabled{true};
+        bool  show   {true};
+        bool  locked {false};
+        int   width  {1024};
+        int   height {1024};
+        float ppm    {5000.0f};
+        float x      {0.0f};
+        float y      {0.0f};
+        float z      {0.0f};
+    };
+    Config config;
+
     static constexpr std::string_view c_type_name{"Hud"};
     static constexpr std::string_view c_title{"Hud"};
     static constexpr uint32_t c_type_hash = compiletime_xxhash::xxh32(c_type_name.data(), c_type_name.size(), {});
@@ -94,6 +109,8 @@ private:
     erhe::application::Redirect_command          m_drag_bool_redirect_update_command;
     erhe::application::Drag_enable_command       m_drag_bool_enable_command;
 #endif
+
+    std::weak_ptr<erhe::scene::Node>             m_drag_node;
 
     std::shared_ptr<erhe::scene::Node>           m_rendertarget_node;
     std::shared_ptr<Rendertarget_mesh>           m_rendertarget_mesh;

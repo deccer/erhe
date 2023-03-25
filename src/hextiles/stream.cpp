@@ -4,11 +4,19 @@
 namespace hextiles
 {
 
+File_write_stream::File_write_stream(const std::filesystem::path& path)
+{
+    m_file = fopen(path.string().c_str(), "wb");
+    if (!m_file) {
+        log_stream->error("File open fail: {} - {}", path.string(), strerror(errno));
+        abort();
+    }
+}
+
 File_write_stream::File_write_stream(const char* path)
 {
     m_file = fopen(path, "wb");
-    if (!m_file)
-    {
+    if (!m_file) {
         log_stream->error("File open fail: {} - {}", path, strerror(errno));
         abort();
     }
@@ -26,11 +34,19 @@ void File_write_stream::op(const int8_t&   v) const { fwrite(&v, 1, sizeof(int8_
 void File_write_stream::op(const int16_t&  v) const { fwrite(&v, 1, sizeof(int16_t ), m_file); }
 void File_write_stream::op(const int32_t&  v) const { fwrite(&v, 1, sizeof(int32_t ), m_file); }
 
+File_read_stream::File_read_stream(const std::filesystem::path& path)
+{
+    m_file = fopen(path.string().c_str(), "rb");
+    if (!m_file) {
+        log_stream->error("File open fail: {} - {}", path.string(), strerror(errno));
+        abort();
+    }
+}
+
 File_read_stream::File_read_stream(const char* path)
 {
     m_file = fopen(path, "rb");
-    if (!m_file)
-    {
+    if (!m_file) {
         log_stream->error("File open fail: {} - {}", path, strerror(errno));
         abort();
     }
